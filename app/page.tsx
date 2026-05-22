@@ -7,18 +7,18 @@ export default function LandingPage() {
   return (
     <main className="min-h-screen">
       {/* Hero */}
-      <section className="mx-auto max-w-6xl px-6 pt-10 pb-16">
-        <header className="flex items-center justify-between">
+      <section className="mx-auto max-w-6xl px-4 sm:px-6 pt-6 sm:pt-10 pb-10 sm:pb-16">
+        <header className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-3">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.svg" alt="Book Junk Away" className="h-12 w-12" />
+            <img src="/logo.svg" alt="Book Junk Away" className="h-10 w-10 sm:h-12 sm:w-12" />
             <div>
-              <div className="text-lg font-black tracking-tight">Book Junk Away</div>
-              <div className="text-xs text-white/50">Meta Ad Studio · Tampa Edition</div>
+              <div className="text-base sm:text-lg font-black tracking-tight">Book Junk Away</div>
+              <div className="text-[10px] sm:text-xs text-white/50">Meta Ad Studio · Tampa Edition</div>
             </div>
           </div>
-          <nav className="hidden sm:flex items-center gap-1 text-sm">
-            <Link className="btn-ghost" href="/inspiration">
+          <nav className="flex items-center gap-1 text-sm">
+            <Link className="btn-ghost hidden sm:inline-flex" href="/inspiration">
               <Eye className="size-4" /> Ad Inspiration
             </Link>
             <Link className="btn-primary" href="/editor">
@@ -27,12 +27,12 @@ export default function LandingPage() {
           </nav>
         </header>
 
-        <div className="mt-14 grid lg:grid-cols-2 gap-10 items-center">
+        <div className="mt-8 sm:mt-14 grid lg:grid-cols-2 gap-8 sm:gap-10 items-center">
           <div>
             <span className="chip">
               <Sparkles className="size-3" /> Powered by Nano Banana
             </span>
-            <h1 className="mt-4 text-5xl sm:text-6xl font-black leading-[1.02] tracking-tight">
+            <h1 className="mt-4 text-4xl sm:text-5xl md:text-6xl font-black leading-[1.05] sm:leading-[1.02] tracking-tight">
               Dominate Tampa with{" "}
               <span className="bg-gradient-to-r from-brand-300 via-brand to-red-500 bg-clip-text text-transparent">
                 stunning Meta ads
