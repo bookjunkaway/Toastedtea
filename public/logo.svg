@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600" role="img" aria-label="Book Junk Away">
+  <defs>
+    <path id="topArc" d="M 90,300 a 210,210 0 0 1 420,0" fill="none" />
+    <path id="bottomArc" d="M 110,300 a 190,190 0 0 0 380,0" fill="none" />
+    <linearGradient id="truckGrad" x1="0" x2="0" y1="0" y2="1">
+      <stop offset="0" stop-color="#FFD43B"/>
+      <stop offset="1" stop-color="#F2B705"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Outer black ring -->
+  <circle cx="300" cy="300" r="290" fill="#0a0a0a"/>
+  <!-- White interior -->
+  <circle cx="300" cy="300" r="248" fill="#ffffff"/>
+  <!-- Thin yellow inner ring -->
+  <circle cx="300" cy="300" r="248" fill="none" stroke="#FBBF24" stroke-width="3"/>
+
+  <!-- Top arc text: BOOK JUNK AWAY -->
+  <text font-family="Impact, 'Arial Black', sans-serif" font-weight="900" font-size="74" fill="#FBBF24"
+        stroke="#dc2626" stroke-width="2" letter-spacing="6" text-anchor="middle">
+    <textPath href="#topArc" startOffset="50%">BOOK JUNK AWAY</textPath>
+  </text>
+
+  <!-- Dump truck (simplified silhouette) -->
+  <g transform="translate(110,235)">
+    <!-- Cab -->
+    <path d="M 270,40 L 360,40 L 380,130 L 380,170 L 250,170 L 250,90 Z"
+          fill="url(#truckGrad)" stroke="#0a0a0a" stroke-width="6" stroke-linejoin="round"/>
+    <!-- Windshield -->
+    <path d="M 280,55 L 350,55 L 365,115 L 280,115 Z" fill="#0a0a0a" opacity="0.85"/>
+    <!-- Dump bed -->
+    <path d="M 20,30 L 250,30 L 270,170 L 20,170 Z"
+          fill="url(#truckGrad)" stroke="#0a0a0a" stroke-width="6" stroke-linejoin="round"/>
+    <!-- Bed center stripe -->
+    <line x1="35" y1="100" x2="262" y2="100" stroke="#0a0a0a" stroke-width="4"/>
+    <!-- Chassis -->
+    <rect x="10" y="170" width="380" height="14" fill="#0a0a0a"/>
+    <!-- Wheels -->
+    <circle cx="70" cy="200" r="32" fill="#0a0a0a"/>
+    <circle cx="70" cy="200" r="14" fill="#FBBF24" stroke="#0a0a0a" stroke-width="4"/>
+    <circle cx="320" cy="200" r="32" fill="#0a0a0a"/>
+    <circle cx="320" cy="200" r="14" fill="#FBBF24" stroke="#0a0a0a" stroke-width="4"/>
+
+    <!-- HAULED stamp -->
+    <g transform="translate(80,75) rotate(-8)">
+      <rect x="0" y="0" width="180" height="48" fill="none" stroke="#dc2626" stroke-width="5" rx="4"/>
+      <rect x="6" y="6" width="168" height="36" fill="none" stroke="#dc2626" stroke-width="3" rx="2"/>
+      <text x="90" y="35" font-family="Impact, 'Arial Black', sans-serif" font-size="32"
+            font-weight="900" fill="#dc2626" text-anchor="middle" letter-spacing="4">HAULED</text>
+    </g>
+  </g>
+
+  <!-- Palm trees flanking -->
+  <g fill="#FBBF24" stroke="#0a0a0a" stroke-width="2">
+    <g transform="translate(140,470)">
+      <path d="M 0,0 Q -6,-22 -2,-44"/>
+      <path d="M -2,-44 Q -22,-50 -32,-40 M -2,-44 Q 18,-52 30,-44 M -2,-44 Q -12,-62 -22,-66 M -2,-44 Q 8,-62 18,-66"
+            stroke-linecap="round" stroke-width="6" fill="none"/>
+      <circle cx="-2" cy="-44" r="4" fill="#0a0a0a"/>
+    </g>
+    <g transform="translate(460,470)">
+      <path d="M 0,0 Q 6,-22 2,-44"/>
+      <path d="M 2,-44 Q 22,-50 32,-40 M 2,-44 Q -18,-52 -30,-44 M 2,-44 Q 12,-62 22,-66 M 2,-44 Q -8,-62 -18,-66"
+            stroke-linecap="round" stroke-width="6" fill="none"/>
+      <circle cx="2" cy="-44" r="4" fill="#0a0a0a"/>
+    </g>
+  </g>
+
+  <!-- Bottom arc text: BOOK IT - JUNK IT - AWAY IT -->
+  <text font-family="Impact, 'Arial Black', sans-serif" font-weight="900" font-size="34" fill="#ffffff"
+        letter-spacing="4" text-anchor="middle">
+    <textPath href="#bottomArc" startOffset="50%" side="right">BOOK IT &#160; • &#160; JUNK IT &#160; • &#160; AWAY IT</textPath>
+  </text>
+
+  <!-- URL -->
+  <text x="300" y="555" font-family="Impact, 'Arial Black', sans-serif" font-weight="900"
+        font-size="28" fill="#dc2626" letter-spacing="2" text-anchor="middle">BOOKJUNKAWAY.COM</text>
+</svg>
