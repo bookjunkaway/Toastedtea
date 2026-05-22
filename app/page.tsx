@@ -18,8 +18,11 @@ export default function LandingPage() {
             </div>
           </div>
           <nav className="flex items-center gap-1 text-sm">
-            <Link className="btn-ghost hidden sm:inline-flex" href="/inspiration">
+            <Link className="btn-ghost hidden md:inline-flex" href="/inspiration">
               <Eye className="size-4" /> Ad Inspiration
+            </Link>
+            <Link className="btn-ghost hidden sm:inline-flex" href="/live">
+              🚚 Live 3D
             </Link>
             <Link className="btn-primary" href="/editor">
               Open Studio <ArrowRight className="size-4" />
