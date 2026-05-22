@@ -1,0 +1,331 @@
+"use client";
+
+import Link from "next/link";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { ArrowLeft, CheckCircle2, Download, Loader2, Sparkles, Wand2 } from "lucide-react";
+import { useEditor, sceneAtTime, totalDuration } from "@/lib/store";
+import { ASPECT_RATIOS, AspectRatioKey, BrandInputs } from "@/lib/types";
+import { exportProjectVideo, downloadBlob, extensionFor } from "@/lib/exporter";
+import { magicFix } from "@/lib/convertScore";
+import { wrapWithBrandSting } from "@/lib/memorability";
+import { renderScene, preloadScenes } from "@/lib/renderer";
+import { generateBananaImage } from "@/lib/nanoBanana";
+
+type StepKey = "copy" | "imagery" | "polish" | "render" | "done";
+
+interface Step {
+  key: StepKey;
+  label: string;
+  status: "pending" | "running" | "done" | "error";
+  detail?: string;
+}
+
+const INITIAL_STEPS: Step[] = [
+  { key: "copy", label: "Writing your ad copy", status: "pending" },
+  { key: "imagery", label: "Generating Tampa imagery", status: "pending" },
+  { key: "polish", label: "Polishing for Meta", status: "pending" },
+  { key: "render", label: "Rendering video", status: "pending" },
+];
+
+const SUGGESTED_PROMPTS = [
+  "15-second Reels ad for a same-day garage cleanout with $50 off",
+  "Before/after hoarder cleanout in South Tampa with 5-star reviews",
+  "Hurricane debris cleanup ad — book today, gone today",
+  "Estate cleanout ad targeted at realtors in Tampa Bay",
+  "Family-owned, insured Tampa junk removal — trust builder",
+];
+
+function QuickBody() {
+  const [prompt, setPrompt] = useState("");
+  const [steps, setSteps] = useState<Step[]>(INITIAL_STEPS);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [resultUrl, setResultUrl] = useState<string | null>(null);
+  const [resultName, setResultName] = useState<string>("ad.mp4");
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Live preview during render
+  const previewProgressRef = useRef(0);
+
+  const setStep = (key: StepKey, patch: Partial<Step>) => {
+    setSteps((prev) => prev.map((s) => (s.key === key ? { ...s, ...patch } : s)));
+  };
+
+  const generate = async () => {
+    if (!prompt.trim() || busy) return;
+    setBusy(true);
+    setError(null);
+    setResultUrl(null);
+    setSteps(INITIAL_STEPS.map((s) => ({ ...s, status: "pending" })));
+
+    try {
+      // 1. Ad copy via /api/generate-ad
+      setStep("copy", { status: "running" });
+      const adRes = await fetch("/api/generate-ad", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ instruction: prompt, currentAspect: "9:16" }),
+      });
+      if (!adRes.ok) throw new Error(`Copy generation failed: HTTP ${adRes.status}`);
+      const adJson = await adRes.json();
+      const spec = adJson.spec as {
+        templateId: string;
+        aspectRatio: string;
+        brandPatch: Partial<BrandInputs>;
+        sceneOverrides: Array<{ sceneIndex: number; layerIndex: number; text: string }>;
+      };
+      setStep("copy", { status: "done", detail: `${spec.templateId} · ${spec.aspectRatio}` });
+
+      // Apply to the editor store
+      const editor = useEditor.getState();
+      editor.setAspectRatio(spec.aspectRatio as AspectRatioKey);
+      editor.loadTemplate(spec.templateId);
+      if (spec.brandPatch) editor.updateBrand(spec.brandPatch);
+      // sceneOverrides
+      const fresh = useEditor.getState().project;
+      for (const o of spec.sceneOverrides ?? []) {
+        const sc = fresh.scenes[o.sceneIndex];
+        if (!sc) continue;
+        const layer = sc.layers[o.layerIndex];
+        if (!layer || layer.type !== "text") continue;
+        editor.updateLayer(sc.id, layer.id, { text: o.text });
+      }
+
+      // 2. Imagery (free Pollinations fallback works even without Gemini billing)
+      setStep("imagery", { status: "running" });
+      try {
+        const ar = useEditor.getState().project.aspectRatio;
+        const heroPrompt = `Hero shot for: ${prompt}. Photoreal Tampa Florida.`;
+        const img = await generateBananaImage(heroPrompt, ar, "auto");
+        const sceneId = useEditor.getState().project.scenes[0]?.id;
+        if (sceneId) {
+          useEditor.getState().updateScene(sceneId, {
+            background: { kind: "image", src: img.dataUrl, fit: "cover", overlay: "rgba(0,0,0,0.45)" },
+          });
+        }
+        setStep("imagery", { status: "done", detail: `via ${img.source}` });
+      } catch (e) {
+        setStep("imagery", {
+          status: "done",
+          detail: "skipped (no generator available)",
+        });
+      }
+
+      // 3. Polish: brand sting + magic fix
+      setStep("polish", { status: "running" });
+      useEditor.setState((s) => ({ project: wrapWithBrandSting(magicFix(s.project)) }));
+      setStep("polish", { status: "done", detail: "brand sting + policy fixes applied" });
+
+      // 4. Render
+      setStep("render", { status: "running" });
+      const project = useEditor.getState().project;
+      const out = await exportProjectVideo(project, {
+        fps: 30,
+        onProgress: (p) => {
+          previewProgressRef.current = p;
+          setStep("render", { status: "running", detail: `${Math.round(p * 100)}%` });
+        },
+      });
+      const safeName =
+        prompt
+          .replace(/[^a-z0-9-_ ]+/gi, "")
+          .replace(/\s+/g, "_")
+          .slice(0, 40)
+          .toLowerCase() || "ad";
+      const filename = `${safeName}.${extensionFor(out.mimeType)}`;
+      const url = URL.createObjectURL(out.blob);
+      setResultUrl(url);
+      setResultName(filename);
+      setStep("render", { status: "done", detail: `${out.durationSeconds.toFixed(1)}s · ${out.width}×${out.height}` });
+
+      // Auto-download
+      downloadBlob(out.blob, filename);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
+      setSteps((prev) => prev.map((s) => (s.status === "running" ? { ...s, status: "error", detail: msg } : s)));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Live preview canvas during render
+  useEffect(() => {
+    if (!busy) return;
+    const c = canvasRef.current;
+    if (!c) return;
+    const ctx = c.getContext("2d");
+    if (!ctx) return;
+    let raf = 0;
+    const tick = () => {
+      const project = useEditor.getState().project;
+      if (project.scenes.length) {
+        const total = totalDuration(project);
+        const t = (previewProgressRef.current ?? 0) * total;
+        const slot = sceneAtTime(project, t);
+        if (slot) {
+          // preload images on the fly (best-effort)
+          preloadScenes([slot.scene]).then(() => {
+            renderScene(ctx, slot.scene, slot.localTime, c.width, c.height);
+          });
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [busy]);
+
+  // Initial preview frame
+  useEffect(() => {
+    if (busy || resultUrl) return;
+    const c = canvasRef.current;
+    if (!c) return;
+    const ctx = c.getContext("2d");
+    if (!ctx) return;
+    const project = useEditor.getState().project;
+    const slot = sceneAtTime(project, 0);
+    if (slot) {
+      preloadScenes([slot.scene]).then(() => renderScene(ctx, slot.scene, 0, c.width, c.height));
+    }
+  }, [busy, resultUrl]);
+
+  const project = useEditor((s) => s.project);
+  const ar = ASPECT_RATIOS[project.aspectRatio];
+
+  return (
+    <main className="min-h-[100dvh] mx-auto max-w-3xl px-4 sm:px-6 py-6">
+      <div className="flex items-center justify-between mb-6">
+        <Link href="/" className="btn-ghost h-9">
+          <ArrowLeft className="size-4" /> Home
+        </Link>
+        <Link href="/editor" className="btn-ghost h-9">
+          Open full studio
+        </Link>
+      </div>
+
+      <header className="text-center mb-6">
+        <div className="inline-flex items-center gap-1 chip">
+          <Sparkles className="size-3 text-brand" /> One-prompt mode
+        </div>
+        <h1 className="mt-3 text-3xl sm:text-4xl font-black tracking-tight leading-[1.05]">
+          Describe an ad. Get an MP4.
+        </h1>
+        <p className="text-white/60 text-sm mt-2 max-w-lg mx-auto">
+          One sentence. We write the copy, generate the imagery, polish it Meta-safe, and download a finished video.
+        </p>
+      </header>
+
+      {/* Prompt + suggestions */}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          generate();
+        }}
+        className="panel p-4"
+      >
+        <textarea
+          className="input min-h-[100px] text-base"
+          placeholder='Describe your ad — e.g. "15s Reels for same-day garage cleanout with $50 off"'
+          value={prompt}
+          onChange={(e) => setPrompt(e.target.value)}
+          disabled={busy}
+        />
+        <div className="mt-2 -mx-1 flex gap-1 overflow-x-auto pb-1 px-1">
+          {SUGGESTED_PROMPTS.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => setPrompt(s)}
+              disabled={busy}
+              className="chip whitespace-nowrap shrink-0 hover:bg-white/10"
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+        <button
+          type="submit"
+          disabled={busy || !prompt.trim()}
+          className="btn-primary w-full mt-3 h-12 text-base"
+        >
+          {busy ? (
+            <>
+              <Loader2 className="size-5 animate-spin" /> Building your ad…
+            </>
+          ) : (
+            <>
+              <Wand2 className="size-5" /> Make me an ad
+            </>
+          )}
+        </button>
+        {error && (
+          <div className="mt-3 rounded-lg bg-red-500/10 border border-red-500/30 p-3 text-sm text-red-300">
+            {error}
+          </div>
+        )}
+      </form>
+
+      {/* Preview + progress */}
+      <div className="mt-6 grid sm:grid-cols-[1fr_1.2fr] gap-4 items-start">
+        <div
+          className="rounded-2xl overflow-hidden ring-1 ring-white/10 shadow-2xl bg-black mx-auto"
+          style={{
+            aspectRatio: `${ar.width} / ${ar.height}`,
+            width: "100%",
+            maxWidth: 280,
+          }}
+        >
+          <canvas ref={canvasRef} width={ar.width} height={ar.height} className="w-full h-full block" />
+        </div>
+
+        <div className="panel p-4">
+          <div className="label mb-2">Pipeline</div>
+          <ul className="space-y-2">
+            {steps.map((s) => (
+              <li key={s.key} className="flex items-start gap-2 text-sm">
+                {s.status === "done" ? (
+                  <CheckCircle2 className="size-4 text-emerald-400 mt-0.5" />
+                ) : s.status === "running" ? (
+                  <Loader2 className="size-4 animate-spin text-brand mt-0.5" />
+                ) : s.status === "error" ? (
+                  <span className="size-4 inline-block rounded-full bg-red-500 mt-0.5" />
+                ) : (
+                  <span className="size-4 inline-block rounded-full border border-white/20 mt-0.5" />
+                )}
+                <div>
+                  <div className={s.status === "pending" ? "text-white/50" : "text-white"}>{s.label}</div>
+                  {s.detail && <div className="text-[11px] text-white/50">{s.detail}</div>}
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          {resultUrl && (
+            <div className="mt-4 pt-4 border-t border-white/10 space-y-2">
+              <video src={resultUrl} controls playsInline className="w-full rounded-lg ring-1 ring-white/10" />
+              <a
+                href={resultUrl}
+                download={resultName}
+                className="btn-primary w-full"
+              >
+                <Download className="size-4" /> Download {resultName}
+              </a>
+              <Link href="/editor" className="btn-ghost w-full">
+                Tweak in the full studio →
+              </Link>
+            </div>
+          )}
+        </div>
+      </div>
+    </main>
+  );
+}
+
+export default function QuickPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-white/60">Loading…</div>}>
+      <QuickBody />
+    </Suspense>
+  );
+}

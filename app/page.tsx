@@ -48,11 +48,14 @@ export default function LandingPage() {
               one-click export for Reels, Stories & Feed.
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
-              <Link className="btn-primary text-base px-5 py-3" href="/editor">
-                <Wand2 className="size-4" /> Build my first ad
+              <Link className="btn-primary text-base px-5 py-3" href="/quick">
+                <Wand2 className="size-4" /> One-prompt ad
               </Link>
-              <Link className="btn-ghost text-base px-5 py-3" href="/inspiration">
-                <Eye className="size-4" /> See top Tampa ads
+              <Link className="btn-ghost text-base px-5 py-3" href="/editor">
+                Open full studio
+              </Link>
+              <Link className="btn-ghost text-base px-5 py-3" href="/live">
+                🚚 Live 3D
               </Link>
             </div>
 
