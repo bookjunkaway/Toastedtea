@@ -23,7 +23,12 @@ export interface ExportResult {
 
 function pickMimeType(): string {
   const candidates = [
+    // iOS Safari produces MP4 natively — try plain mp4 first
+    "video/mp4",
+    "video/mp4;codecs=h264",
     "video/mp4;codecs=avc1.42E01E",
+    "video/mp4;codecs=avc1.4D0028",
+    // Other browsers fall through to WebM
     "video/webm;codecs=vp9,opus",
     "video/webm;codecs=vp8,opus",
     "video/webm",
@@ -32,6 +37,20 @@ function pickMimeType(): string {
     if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(c)) return c;
   }
   return "video/webm";
+}
+
+export function isMp4(mime: string): boolean {
+  return mime.startsWith("video/mp4");
+}
+
+export function canPlayInline(mime: string): boolean {
+  // iOS Safari can't play WebM. Detect Apple browsers via UA.
+  if (typeof navigator === "undefined") return true;
+  const ua = navigator.userAgent;
+  const isAppleMobile = /iPhone|iPad|iPod/.test(ua);
+  const isSafari = /^((?!chrome|android).)*safari/i.test(ua);
+  if ((isAppleMobile || isSafari) && !isMp4(mime)) return false;
+  return true;
 }
 
 export async function exportProjectVideo(
