@@ -191,10 +191,13 @@ function drawText(ctx: CanvasRenderingContext2D, layer: TextLayer, W: number, H:
   const y = layer.y * H;
   const w = layer.width * W;
   const h = layer.height * H;
-  const fontPx = layer.fontSize * H;
+  let fontPx = layer.fontSize * H;
   const display = layer.uppercase ? layer.text.toUpperCase() : layer.text;
   const fontStyle = layer.italic ? "italic " : "";
-  ctx.font = `${fontStyle}${layer.fontWeight} ${fontPx}px ${layer.fontFamily}`;
+  const setFont = (px: number) => {
+    ctx.font = `${fontStyle}${layer.fontWeight} ${px}px ${layer.fontFamily}`;
+  };
+  setFont(fontPx);
   ctx.textBaseline = "top";
   ctx.textAlign = layer.align;
 
@@ -212,19 +215,81 @@ function drawText(ctx: CanvasRenderingContext2D, layer: TextLayer, W: number, H:
   }
   ctx.fillStyle = layer.color;
 
-  const anchorX =
-    layer.align === "left" ? x + layer.paddingX * W : layer.align === "right" ? x + w - layer.paddingX * W : x + w / 2;
+  const padX = layer.paddingX * W;
+  const padY = layer.paddingY * H;
+  const maxWidthInner = Math.max(20, w - padX * 2);
+  const maxHeightInner = Math.max(20, h - padY * 2);
+  const letterSpacingPx = (lp: number) => (layer.letterSpacing || 0) * lp;
 
-  // Word-wrap into available width
-  const lines = wrapText(ctx, display, w - layer.paddingX * 2 * W);
+  // Effective width of one rendered line including letter spacing.
+  const lineRenderedWidth = (line: string, px: number): number => {
+    const base = ctx.measureText(line).width;
+    const ls = letterSpacingPx(px);
+    return base + Math.max(0, line.length - 1) * ls;
+  };
+
+  // Wrap, accounting for letter spacing at current font size.
+  const wrapWithSpacing = (px: number): string[] => {
+    const paragraphs = display.split("\n");
+    const out: string[] = [];
+    for (const para of paragraphs) {
+      const words = para.split(/\s+/).filter(Boolean);
+      if (words.length === 0) {
+        out.push("");
+        continue;
+      }
+      let line = "";
+      for (const word of words) {
+        const candidate = line ? `${line} ${word}` : word;
+        if (lineRenderedWidth(candidate, px) > maxWidthInner && line) {
+          out.push(line);
+          line = word;
+        } else {
+          line = candidate;
+        }
+      }
+      if (line) out.push(line);
+    }
+    return out;
+  };
+
+  // Auto-shrink: pick a font size that fits the box both horizontally
+  // (no single word overflows) and vertically (lines stack inside height).
+  let lines = wrapWithSpacing(fontPx);
+  const fits = (px: number, ls: string[]): boolean => {
+    const lh = px * layer.lineHeight;
+    const total = ls.length * lh;
+    if (total > maxHeightInner) return false;
+    for (const line of ls) {
+      if (lineRenderedWidth(line, px) > maxWidthInner + 0.5) return false;
+    }
+    return true;
+  };
+  let safety = 0;
+  while (!fits(fontPx, lines) && fontPx > 8 && safety < 40) {
+    fontPx *= 0.92;
+    setFont(fontPx);
+    lines = wrapWithSpacing(fontPx);
+    safety++;
+  }
+
+  const anchorX =
+    layer.align === "left"
+      ? x + padX
+      : layer.align === "right"
+      ? x + w - padX
+      : x + w / 2;
+
   const lineHeight = fontPx * layer.lineHeight;
   const totalHeight = lines.length * lineHeight;
-  const startY = y + (h - totalHeight) / 2 + layer.paddingY * H;
+  const startY = y + Math.max(padY, (h - totalHeight) / 2);
+
   for (let i = 0; i < lines.length; i++) {
+    const ly = startY + i * lineHeight;
     if (layer.letterSpacing && layer.letterSpacing !== 0) {
-      drawTextWithSpacing(ctx, lines[i], anchorX, startY + i * lineHeight, layer.letterSpacing * fontPx, layer.align);
+      drawTextWithSpacing(ctx, lines[i], anchorX, ly, letterSpacingPx(fontPx), layer.align);
     } else {
-      ctx.fillText(lines[i], anchorX, startY + i * lineHeight);
+      ctx.fillText(lines[i], anchorX, ly);
     }
   }
   ctx.shadowColor = "transparent";
@@ -247,11 +312,25 @@ function drawTextWithSpacing(
   ctx.textAlign = "left";
   const chars = [...text];
   const widths = chars.map((c) => ctx.measureText(c).width);
-  const total = widths.reduce((a, b) => a + b, 0) + spacing * Math.max(0, chars.length - 1);
+  // Don't apply negative letter spacing to space chars or punctuation
+  // separators — that's what was making "Clear Your" render as "ClearYour"
+  // and "Tampa • St. Pete" collapse to "Tampa•St.Pete".
+  const isSpaceLike = (c: string) => c === " " || c === " " || c === " " || c === " ";
+  const effSpacing = (i: number) => {
+    if (i >= chars.length - 1) return 0;
+    if (spacing >= 0) return spacing;
+    // Negative kerning: skip on spaces and around bullets/separators
+    if (isSpaceLike(chars[i]) || isSpaceLike(chars[i + 1])) return 0;
+    return spacing;
+  };
+  let total = 0;
+  for (let i = 0; i < chars.length; i++) {
+    total += widths[i] + effSpacing(i);
+  }
   let cursor = align === "left" ? x : align === "right" ? x - total : x - total / 2;
   for (let i = 0; i < chars.length; i++) {
     ctx.fillText(chars[i], cursor, y);
-    cursor += widths[i] + spacing;
+    cursor += widths[i] + effSpacing(i);
   }
   ctx.textAlign = prevAlign;
 }
