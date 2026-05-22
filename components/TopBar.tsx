@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Download, Eye, Loader2, Menu, Package, Pause, Play, Users, X } from "lucide-react";
+import { Download, Eye, Film, Loader2, Menu, Package, Pause, Play, Users, X } from "lucide-react";
 import { useEditor, totalDuration } from "@/lib/store";
 import { ASPECT_RATIOS, AspectRatioKey } from "@/lib/types";
 import { downloadBlob, exportProjectVideo, extensionFor } from "@/lib/exporter";
@@ -94,6 +94,9 @@ export function TopBar() {
             <button onClick={isPlaying ? pause : play} className="btn-ghost h-9 w-9 px-0 justify-center">
               {isPlaying ? <Pause className="size-4" /> : <Play className="size-4" />}
             </button>
+            <Link href="/studio/hq" className="btn-ghost h-9 hidden md:inline-flex" title="Remotion HQ preview">
+              <Film className="size-4" /> <span className="hidden lg:inline">HQ</span>
+            </Link>
             <button onClick={() => setMultiOpen(true)} className="btn-ghost h-9">
               <Package className="size-4" /> <span className="hidden lg:inline">All platforms</span>
             </button>
