@@ -5,7 +5,15 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { ArrowLeft, CheckCircle2, Download, Loader2, Sparkles, Wand2 } from "lucide-react";
 import { useEditor, sceneAtTime, totalDuration } from "@/lib/store";
 import { ASPECT_RATIOS, AspectRatioKey, BrandInputs } from "@/lib/types";
-import { exportProjectVideo, downloadBlob, extensionFor } from "@/lib/exporter";
+import {
+  exportProjectVideo,
+  exportProjectForPlatforms,
+  downloadBlob,
+  extensionFor,
+  BulkExportProgress,
+  PlatformExportResult,
+} from "@/lib/exporter";
+import { DEFAULT_PLATFORM_BUNDLE, PLATFORMS, getPlatform } from "@/lib/platforms";
 import { magicFix } from "@/lib/convertScore";
 import { wrapWithBrandSting } from "@/lib/memorability";
 import { renderScene, preloadScenes } from "@/lib/renderer";
@@ -42,6 +50,8 @@ function QuickBody() {
   const [error, setError] = useState<string | null>(null);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [resultName, setResultName] = useState<string>("ad.mp4");
+  const [exportAll, setExportAll] = useState(true);
+  const [bulkResults, setBulkResults] = useState<PlatformExportResult[]>([]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Live preview during render
@@ -56,6 +66,7 @@ function QuickBody() {
     setBusy(true);
     setError(null);
     setResultUrl(null);
+    setBulkResults([]);
     setSteps(INITIAL_STEPS.map((s) => ({ ...s, status: "pending" })));
 
     try {
@@ -119,27 +130,59 @@ function QuickBody() {
       // 4. Render
       setStep("render", { status: "running" });
       const project = useEditor.getState().project;
-      const out = await exportProjectVideo(project, {
-        fps: 30,
-        onProgress: (p) => {
-          previewProgressRef.current = p;
-          setStep("render", { status: "running", detail: `${Math.round(p * 100)}%` });
-        },
-      });
       const safeName =
         prompt
           .replace(/[^a-z0-9-_ ]+/gi, "")
           .replace(/\s+/g, "_")
           .slice(0, 40)
           .toLowerCase() || "ad";
-      const filename = `${safeName}.${extensionFor(out.mimeType)}`;
-      const url = URL.createObjectURL(out.blob);
-      setResultUrl(url);
-      setResultName(filename);
-      setStep("render", { status: "done", detail: `${out.durationSeconds.toFixed(1)}s · ${out.width}×${out.height}` });
 
-      // Auto-download
-      downloadBlob(out.blob, filename);
+      if (exportAll) {
+        const platforms = DEFAULT_PLATFORM_BUNDLE.map((id) => getPlatform(id)!).filter(Boolean);
+        const results = await exportProjectForPlatforms(project, platforms, (state: BulkExportProgress[]) => {
+          const done = state.filter((s) => s.status === "done").length;
+          const running = state.find((s) => s.status === "exporting");
+          const overall = (done + (running?.progress ?? 0)) / platforms.length;
+          previewProgressRef.current = overall;
+          const label =
+            running?.status === "exporting"
+              ? `${getPlatform(running.platformId)?.name ?? running.platformId} · ${Math.round((running.progress ?? 0) * 100)}%`
+              : `${done}/${platforms.length} platforms done`;
+          setStep("render", { status: "running", detail: label });
+        });
+        for (const r of results) {
+          downloadBlob(r.blob, `${safeName}__${r.platform.id}.${extensionFor(r.mimeType)}`);
+        }
+        setBulkResults(results);
+        // Pick a representative one to show in the inline player (prefer Reels)
+        const hero = results.find((r) => r.platform.id === "meta-reels") ?? results[0];
+        if (hero) {
+          const url = URL.createObjectURL(hero.blob);
+          setResultUrl(url);
+          setResultName(`${safeName}__${hero.platform.id}.${extensionFor(hero.mimeType)}`);
+        }
+        setStep("render", {
+          status: "done",
+          detail: `${results.length} platform files exported`,
+        });
+      } else {
+        const out = await exportProjectVideo(project, {
+          fps: 30,
+          onProgress: (p) => {
+            previewProgressRef.current = p;
+            setStep("render", { status: "running", detail: `${Math.round(p * 100)}%` });
+          },
+        });
+        const filename = `${safeName}.${extensionFor(out.mimeType)}`;
+        const url = URL.createObjectURL(out.blob);
+        setResultUrl(url);
+        setResultName(filename);
+        setStep("render", {
+          status: "done",
+          detail: `${out.durationSeconds.toFixed(1)}s · ${out.width}×${out.height}`,
+        });
+        downloadBlob(out.blob, filename);
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
@@ -244,6 +287,22 @@ function QuickBody() {
             </button>
           ))}
         </div>
+        <label className="flex items-start gap-2 mt-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={exportAll}
+            onChange={(e) => setExportAll(e.target.checked)}
+            disabled={busy}
+            className="mt-1 size-4 accent-brand"
+          />
+          <div className="text-sm">
+            <div className="font-semibold">Export to every platform automatically</div>
+            <div className="text-[11px] text-white/50">
+              Downloads {DEFAULT_PLATFORM_BUNDLE.length} files — Meta Reels, Feed Portrait + Square, TikTok, YT Shorts.
+              Uncheck for a single render in the current aspect.
+            </div>
+          </div>
+        </label>
         <button
           type="submit"
           disabled={busy || !prompt.trim()}
@@ -255,7 +314,7 @@ function QuickBody() {
             </>
           ) : (
             <>
-              <Wand2 className="size-5" /> Make me an ad
+              <Wand2 className="size-5" /> {exportAll ? "Make + export everywhere" : "Make me an ad"}
             </>
           )}
         </button>
@@ -304,13 +363,39 @@ function QuickBody() {
           {resultUrl && (
             <div className="mt-4 pt-4 border-t border-white/10 space-y-2">
               <video src={resultUrl} controls playsInline className="w-full rounded-lg ring-1 ring-white/10" />
-              <a
-                href={resultUrl}
-                download={resultName}
-                className="btn-primary w-full"
-              >
-                <Download className="size-4" /> Download {resultName}
-              </a>
+              {bulkResults.length === 0 ? (
+                <a href={resultUrl} download={resultName} className="btn-primary w-full">
+                  <Download className="size-4" /> Download {resultName}
+                </a>
+              ) : (
+                <div className="space-y-1">
+                  <div className="label">Downloaded {bulkResults.length} platform files</div>
+                  <ul className="space-y-1 max-h-44 overflow-auto">
+                    {bulkResults.map((r) => {
+                      const fname = `${(resultName.split("__")[0]) || "ad"}__${r.platform.id}.${extensionFor(r.mimeType)}`;
+                      return (
+                        <li key={r.platform.id} className="flex items-center justify-between gap-2 text-xs bg-white/5 rounded px-2 py-1.5">
+                          <span className="truncate">
+                            <span className="text-brand font-semibold">{r.platform.name}</span>
+                            <span className="text-white/40 ml-2">
+                              {r.platform.width}×{r.platform.height} · {r.durationSeconds.toFixed(1)}s
+                            </span>
+                            {r.trimmed && <span className="ml-2 text-amber-300">trimmed</span>}
+                          </span>
+                          <a
+                            href={URL.createObjectURL(r.blob)}
+                            download={fname}
+                            className="text-brand hover:text-brand-300"
+                            aria-label={`Re-download ${r.platform.name}`}
+                          >
+                            <Download className="size-3.5" />
+                          </a>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
               <Link href="/editor" className="btn-ghost w-full">
                 Tweak in the full studio →
               </Link>
