@@ -10,6 +10,7 @@ import {
   exportProjectForPlatforms,
   downloadBlob,
   extensionFor,
+  canPlayInline,
   BulkExportProgress,
   PlatformExportResult,
 } from "@/lib/exporter";
@@ -50,6 +51,7 @@ function QuickBody() {
   const [error, setError] = useState<string | null>(null);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [resultName, setResultName] = useState<string>("ad.mp4");
+  const [resultMime, setResultMime] = useState<string>("video/mp4");
   const [exportAll, setExportAll] = useState(true);
   const [bulkResults, setBulkResults] = useState<PlatformExportResult[]>([]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -160,6 +162,7 @@ function QuickBody() {
           const url = URL.createObjectURL(hero.blob);
           setResultUrl(url);
           setResultName(`${safeName}__${hero.platform.id}.${extensionFor(hero.mimeType)}`);
+          setResultMime(hero.mimeType);
         }
         setStep("render", {
           status: "done",
@@ -177,6 +180,7 @@ function QuickBody() {
         const url = URL.createObjectURL(out.blob);
         setResultUrl(url);
         setResultName(filename);
+        setResultMime(out.mimeType);
         setStep("render", {
           status: "done",
           detail: `${out.durationSeconds.toFixed(1)}s · ${out.width}×${out.height}`,
@@ -362,7 +366,32 @@ function QuickBody() {
 
           {resultUrl && (
             <div className="mt-4 pt-4 border-t border-white/10 space-y-2">
-              <video src={resultUrl} controls playsInline className="w-full rounded-lg ring-1 ring-white/10" />
+              {canPlayInline(resultMime) ? (
+                <video
+                  src={resultUrl}
+                  controls
+                  playsInline
+                  muted
+                  autoPlay
+                  loop
+                  className="w-full rounded-lg ring-1 ring-white/10 bg-black"
+                />
+              ) : (
+                <div className="rounded-lg ring-1 ring-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-100">
+                  <div className="font-bold">Your browser can&apos;t play this format inline.</div>
+                  <div className="mt-1">
+                    iPhones can&apos;t preview <code>.webm</code> in the page. The file has already been downloaded — open it from your downloads folder, or tap below to open it in a new tab (it&apos;ll play in the Files app).
+                  </div>
+                  <a
+                    href={resultUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn-ghost w-full mt-2 h-9 text-xs"
+                  >
+                    Open video in a new tab
+                  </a>
+                </div>
+              )}
               {bulkResults.length === 0 ? (
                 <a href={resultUrl} download={resultName} className="btn-primary w-full">
                   <Download className="size-4" /> Download {resultName}
