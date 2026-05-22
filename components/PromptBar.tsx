@@ -95,7 +95,7 @@ export function PromptBar() {
   };
 
   return (
-    <div className="border-b border-white/10 bg-gradient-to-b from-black/60 to-black/30 px-4 py-2">
+    <div className="border-b border-white/10 bg-gradient-to-b from-black/60 to-black/30 px-3 py-2">
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -103,37 +103,37 @@ export function PromptBar() {
         }}
         className="flex items-center gap-2"
       >
-        <div className="relative flex-1">
+        <div className="relative flex-1 min-w-0">
           <Sparkles className="size-4 text-brand absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             ref={inputRef}
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            placeholder='Describe your ad — e.g. "15s Reels for storm debris with $50 off"  (⌘K)'
-            className="input pl-9 pr-24 h-10"
+            placeholder='Describe your ad — e.g. "15s Reels storm debris $50 off"'
+            className="input pl-9 pr-3 sm:pr-24 h-10 text-base sm:text-sm"
           />
           <kbd className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono text-white/40 hidden sm:inline">
             ⌘K
           </kbd>
         </div>
-        <button type="submit" disabled={busy || !value.trim()} className="btn-primary h-10">
+        <button type="submit" disabled={busy || !value.trim()} className="btn-primary h-10 px-3 shrink-0">
           {busy ? <Loader2 className="size-4 animate-spin" /> : <Wand2 className="size-4" />}
-          {busy ? "Generating…" : "Generate"}
+          <span className="hidden sm:inline">{busy ? "Generating…" : "Generate"}</span>
         </button>
       </form>
-      <div className="mt-1.5 flex items-center gap-2 overflow-x-auto pb-1">
+      <div className="mt-1.5 flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1">
         {SUGGESTIONS.map((s) => (
           <button
             key={s}
             type="button"
             onClick={() => setValue(s)}
-            className="chip whitespace-nowrap hover:bg-white/10 cursor-pointer"
+            className="chip whitespace-nowrap hover:bg-white/10 cursor-pointer text-[11px] shrink-0"
           >
             {s}
           </button>
         ))}
         {note && (
-          <span className="ml-auto text-[11px] text-white/50 whitespace-nowrap truncate max-w-[40%]">
+          <span className="ml-auto text-[11px] text-white/50 whitespace-nowrap truncate max-w-[40%] hidden sm:inline">
             {note}
           </span>
         )}

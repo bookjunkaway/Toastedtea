@@ -79,10 +79,10 @@ export function PreviewCanvas() {
   }, [isPlaying, selectedSceneId]);
 
   return (
-    <div className="flex h-full w-full items-center justify-center p-4">
+    <div className="flex h-full w-full items-center justify-center p-2 sm:p-4">
       <div
         className="relative shadow-2xl rounded-lg overflow-hidden ring-1 ring-white/10"
-        style={{ aspectRatio: `${ar.width} / ${ar.height}`, maxHeight: "100%", maxWidth: "100%" }}
+        style={{ aspectRatio: `${ar.width} / ${ar.height}`, maxHeight: "100%", maxWidth: "100%", minHeight: 0 }}
       >
         <canvas
           ref={canvasRef}

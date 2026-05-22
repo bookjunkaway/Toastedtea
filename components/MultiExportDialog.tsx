@@ -76,8 +76,8 @@ export function MultiExportDialog({ open, onClose }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="panel w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="panel w-full max-w-3xl h-[90dvh] sm:h-auto sm:max-h-[90vh] overflow-hidden flex flex-col rounded-t-2xl sm:rounded-xl">
         <header className="flex items-center justify-between p-4 border-b border-white/10">
           <div className="flex items-center gap-2">
             <Package className="size-5 text-brand" />
