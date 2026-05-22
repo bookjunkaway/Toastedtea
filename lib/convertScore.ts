@@ -96,25 +96,102 @@ export function convertScore(project: Project): ConvertScoreBreakdown {
   };
 }
 
-export function magicFix(project: Project): Project {
-  // 1) Apply every available auto-fix from the policy linter
+export interface MagicFixResult {
+  project: Project;
+  changes: string[];
+}
+
+const VIRAL_HOOK_PATTERN = /^(POV|Tell me you|This is your sign|Rate this|Things|Day in the life|Customer said|What every|Stop|If you)/i;
+
+function hasBrandSting(project: Project): boolean {
+  return project.scenes.some((s) => /brand sting/i.test(s.name));
+}
+
+export function magicFixWithChanges(project: Project): MagicFixResult {
+  const changes: string[] = [];
   let next = project;
-  for (const f of lintProject(next)) {
-    if (f.autoFix) next = f.autoFix(next);
+
+  // 1) Apply every available auto-fix from the policy linter
+  const findings = lintProject(next);
+  const fixable = findings.filter((f) => f.autoFix);
+  for (const f of fixable) {
+    if (f.autoFix) {
+      const before = next;
+      next = f.autoFix(next);
+      if (next !== before) changes.push(`Fixed: ${f.title}`);
+    }
   }
 
-  // 2) If recall < 60, wrap with brand sting
-  const recall = recallScore(next);
-  if (recall.score < 60) next = wrapWithBrandSting(next);
+  // 2) Hook upgrade — if the first scene's first text isn't a viral pattern, swap one in
+  const first = next.scenes[0];
+  if (first) {
+    const firstText = first.layers.find((l) => l.type === "text") as { id: string; text: string } | undefined;
+    if (firstText && !VIRAL_HOOK_PATTERN.test(firstText.text.trim())) {
+      const viralHook = "POV: you finally booked the garage cleanout you've been avoiding for years.";
+      next = {
+        ...next,
+        scenes: next.scenes.map((s) =>
+          s.id !== first.id
+            ? s
+            : {
+                ...s,
+                layers: s.layers.map((l) => (l.id === firstText.id && l.type === "text" ? { ...l, text: viralHook } : l)),
+              },
+        ),
+        updatedAt: Date.now(),
+      };
+      changes.push("Upgraded hook to proven POV pattern");
+    }
+  }
 
   // 3) Tighten the first scene to ≤2.5s for hook payoff
-  if (next.scenes[0] && next.scenes[0].duration > 3) {
+  if (next.scenes[0] && next.scenes[0].duration > 2.5) {
+    const old = next.scenes[0].duration;
     next = {
       ...next,
-      scenes: next.scenes.map((s, i) => (i === 0 ? { ...s, duration: Math.min(s.duration, 2.5) } : s)),
+      scenes: next.scenes.map((s, i) => (i === 0 ? { ...s, duration: 2.5 } : s)),
       updatedAt: Date.now(),
     };
+    changes.push(`Shortened hook from ${old.toFixed(1)}s to 2.5s`);
   }
 
-  return next;
+  // 4) Wrap with brand sting if not already wrapped (uses recall score as the gate)
+  if (!hasBrandSting(next)) {
+    const recall = recallScore(next);
+    if (recall.score < 80) {
+      next = wrapWithBrandSting(next);
+      changes.push("Added brand sting (signature open + close)");
+    }
+  }
+
+  // 5) Ensure every scene has at least one animated layer (kills static feel)
+  let animatedAny = false;
+  next = {
+    ...next,
+    scenes: next.scenes.map((sc) => {
+      if (sc.layers.some((l) => l.animation && l.animation !== "none")) return sc;
+      animatedAny = true;
+      return {
+        ...sc,
+        layers: sc.layers.map((l, i) => (i === 0 ? { ...l, animation: "slideUp", animationDuration: 0.45 } : l)),
+      };
+    }),
+  };
+  if (animatedAny) changes.push("Added entrance motion to flat scenes");
+
+  // 6) Force vertical for max-distribution if not already vertical
+  if (next.aspectRatio !== "9:16") {
+    next = { ...next, aspectRatio: "9:16", updatedAt: Date.now() };
+    changes.push(`Switched aspect to 9:16 for Reels distribution`);
+  }
+
+  if (changes.length === 0) {
+    changes.push("Already optimized — no changes needed.");
+  }
+
+  return { project: next, changes };
+}
+
+export function magicFix(project: Project): Project {
+  return magicFixWithChanges(project).project;
 }

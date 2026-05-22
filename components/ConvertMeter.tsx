@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { Download, Loader2, Sparkles, Wand2, Zap } from "lucide-react";
 import { useEditor } from "@/lib/store";
-import { ConvertScoreBreakdown, convertScore, magicFix } from "@/lib/convertScore";
+import { ConvertScoreBreakdown, convertScore, magicFixWithChanges } from "@/lib/convertScore";
 import { buildVariantProjects, generateHookVariants } from "@/lib/variants";
 import { downloadBlob, exportProjectVideo, extensionFor } from "@/lib/exporter";
 
@@ -25,6 +25,7 @@ export function ConvertMeter() {
   const project = useEditor((s) => s.project);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [magicChanges, setMagicChanges] = useState<string[] | null>(null);
   const breakdown: ConvertScoreBreakdown = useMemo(() => convertScore(project), [project]);
   const variants = useMemo(() => generateHookVariants(project.brand), [project.brand]);
 
@@ -50,7 +51,11 @@ export function ConvertMeter() {
   };
 
   const applyMagic = () => {
-    useEditor.setState((s) => ({ project: magicFix(s.project) }));
+    const result = magicFixWithChanges(useEditor.getState().project);
+    useEditor.setState({ project: result.project });
+    setMagicChanges(result.changes);
+    // Auto-dismiss the toast after 6s
+    window.setTimeout(() => setMagicChanges(null), 6000);
   };
 
   const applyVariantHook = (hook: string) => {
@@ -108,6 +113,22 @@ export function ConvertMeter() {
       <button onClick={applyMagic} className="btn-primary w-full">
         <Wand2 className="size-4" /> Magic fix — make this convert
       </button>
+
+      {magicChanges && (
+        <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/30 p-2 text-[11px] text-emerald-100">
+          <div className="font-bold text-emerald-300 mb-1">
+            ✨ Applied {magicChanges.length} {magicChanges.length === 1 ? "change" : "changes"}
+          </div>
+          <ul className="space-y-0.5">
+            {magicChanges.map((c, i) => (
+              <li key={i} className="flex gap-1">
+                <span className="text-emerald-400">•</span>
+                <span>{c}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="pt-2 border-t border-white/10">
         <div className="label mb-2 flex items-center gap-1">
