@@ -85,18 +85,23 @@ export const BANANA_PRESETS: BananaPreset[] = [
   },
 ];
 
+export type ImageSource = "auto" | "nano-banana" | "pollinations";
+
 export interface BananaResult {
   dataUrl: string;
+  source: "nano-banana" | "pollinations";
+  note?: string;
 }
 
 export async function generateBananaImage(
   prompt: string,
   aspectRatio: AspectRatioKey,
+  source: ImageSource = "auto",
 ): Promise<BananaResult> {
   const res = await fetch("/api/generate-image", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt, aspectRatio }),
+    body: JSON.stringify({ prompt, aspectRatio, source }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: "Generation failed" }));
