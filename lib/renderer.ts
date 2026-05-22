@@ -241,13 +241,19 @@ function drawTextWithSpacing(
   spacing: number,
   align: "left" | "center" | "right",
 ): void {
-  const widths = [...text].map((c) => ctx.measureText(c).width);
-  const total = widths.reduce((a, b) => a + b, 0) + spacing * (text.length - 1);
+  // We position each glyph manually, so textAlign must be "left" or the
+  // built-in centering offsets each character and produces jumbled text.
+  const prevAlign = ctx.textAlign;
+  ctx.textAlign = "left";
+  const chars = [...text];
+  const widths = chars.map((c) => ctx.measureText(c).width);
+  const total = widths.reduce((a, b) => a + b, 0) + spacing * Math.max(0, chars.length - 1);
   let cursor = align === "left" ? x : align === "right" ? x - total : x - total / 2;
-  for (let i = 0; i < text.length; i++) {
-    ctx.fillText(text[i], cursor, y);
+  for (let i = 0; i < chars.length; i++) {
+    ctx.fillText(chars[i], cursor, y);
     cursor += widths[i] + spacing;
   }
+  ctx.textAlign = prevAlign;
 }
 
 function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
