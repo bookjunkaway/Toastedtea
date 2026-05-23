@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { Check, Loader2, Phone } from "lucide-react";
 import { LeadFormSpec, decodeLeadForm, useLeads } from "@/lib/leads";
+import { track } from "@/lib/analytics";
 
 const URGENCY_OPTIONS = [
   { id: "asap", label: "ASAP (today)" },
@@ -30,7 +31,9 @@ function LeadBody() {
   useEffect(() => {
     const encoded = search.get("f");
     if (!encoded) return;
-    setSpec(decodeLeadForm(encoded));
+    const s = decodeLeadForm(encoded);
+    setSpec(s);
+    if (s) track({ adId: s.id, event: "view" });
   }, [search]);
 
   const palette = spec?.palette ?? { primary: "#FBBF24", secondary: "#0a0a0a", accent: "#dc2626", surface: "#fafafa", onSurface: "#0a0a0a" };
@@ -62,6 +65,7 @@ function LeadBody() {
       },
     };
     recordSubmission(payload);
+    track({ adId: spec.id, event: "submit", meta: { urgency } });
 
     // Fire-and-forget: email the operator if a notify address is in the form spec
     if (spec.notifyEmail) {
@@ -201,6 +205,7 @@ function LeadBody() {
               </button>
               <a
                 href={`tel:${spec.brand.phone.replace(/[^0-9+]/g, "")}`}
+                onClick={() => track({ adId: spec.id, event: "cta_click", meta: { kind: "phone" } })}
                 className="block w-full h-11 rounded-lg bg-white/5 border border-white/10 text-white font-bold text-center pt-3"
               >
                 <Phone className="inline size-4 mr-1 text-brand" /> Or call {spec.brand.phone}
@@ -220,6 +225,7 @@ function LeadBody() {
               </p>
               <a
                 href={`tel:${spec.brand.phone.replace(/[^0-9+]/g, "")}`}
+                onClick={() => track({ adId: spec.id, event: "cta_click", meta: { kind: "phone-post-submit" } })}
                 className="mt-4 flex items-center justify-center gap-2 h-12 rounded-lg font-black text-base"
                 style={{ background: palette.primary, color: palette.secondary }}
               >

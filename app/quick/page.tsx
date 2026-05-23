@@ -25,6 +25,7 @@ import { projectToScript, speakLive } from "@/lib/voiceover";
 import { leadFormUrl, useLeads, LeadFormSpec } from "@/lib/leads";
 import { canShareFiles, shareToSheet, PLATFORM_UPLOAD_URLS } from "@/lib/share";
 import { Share2, ExternalLink, Copy } from "lucide-react";
+import { track } from "@/lib/analytics";
 
 type StepKey = "copy" | "imagery" | "music" | "polish" | "render" | "done";
 
@@ -654,14 +655,15 @@ function QuickBody() {
                           </div>
                           <div className="mt-1.5 grid grid-cols-3 gap-1">
                             <button
-                              onClick={() =>
-                                shareToSheet({
+                              onClick={async () => {
+                                if (leadForm) track({ adId: leadForm.id, event: "share", meta: { platform: r.platform.id } });
+                                await shareToSheet({
                                   blob: r.blob,
                                   filename: fname,
                                   title: project.brand.companyName,
                                   text: project.brand.offer,
-                                })
-                              }
+                                });
+                              }}
                               disabled={!canShareFiles()}
                               className="btn-primary h-8 px-2 text-[11px]"
                             >
@@ -719,6 +721,7 @@ function QuickBody() {
                   href={leadFormUrl(leadForm)}
                   target="_blank"
                   rel="noreferrer"
+                  onClick={() => track({ adId: leadForm.id, event: "preview_open" })}
                   className="btn-ghost h-8 text-[11px]"
                 >
                   <ExternalLink className="size-3" /> Preview

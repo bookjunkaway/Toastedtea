@@ -57,6 +57,9 @@ export default function LandingPage() {
               <Link className="btn-ghost text-base px-5 py-3" href="/leads">
                 📥 Leads
               </Link>
+              <Link className="btn-ghost text-base px-5 py-3" href="/analytics">
+                📊 Analytics
+              </Link>
               <Link className="btn-ghost text-base px-5 py-3" href="/settings">
                 ⚙️ Settings
               </Link>
