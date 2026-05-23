@@ -87,6 +87,14 @@ function QuickBody() {
       setTone(t);
     }
   }, [search]);
+
+  // Caption that travels with a shared post — includes the lead-form link so a
+  // tap on the post leads straight to the capture form.
+  const shareCaption = (): string => {
+    const b = useEditor.getState().project.brand;
+    const link = leadForm ? leadFormUrl(leadForm) : b.website;
+    return `${b.offer} — ${b.companyName}\n👉 ${link}`;
+  };
   const [showBrandQuick, setShowBrandQuick] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -625,7 +633,7 @@ function QuickBody() {
                           blob,
                           filename: resultName,
                           title: project.brand.companyName,
-                          text: project.brand.offer,
+                          text: shareCaption(),
                         });
                       } catch {}
                     }}
@@ -682,7 +690,7 @@ function QuickBody() {
                                   blob: r.blob,
                                   filename: fname,
                                   title: project.brand.companyName,
-                                  text: project.brand.offer,
+                                  text: shareCaption(),
                                 });
                               }}
                               disabled={!canShareFiles()}
