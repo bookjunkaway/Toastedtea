@@ -133,43 +133,64 @@ function QuickBody() {
       };
       setStep("copy", { status: "done", detail: `${spec.templateId} · ${spec.aspectRatio}` });
 
-      // Apply to the editor store
       const editor = useEditor.getState();
       editor.setAspectRatio(spec.aspectRatio as AspectRatioKey);
-      editor.loadTemplate(spec.templateId);
       if (spec.brandPatch) editor.updateBrand(spec.brandPatch);
-      // sceneOverrides
+
+      // 2. Imagery — generate distinct hero / before / after shots in parallel
+      //    BEFORE building the template, so before/after templates pick them up.
+      //    Cinematic, category-aware, scene-aware prompts. Free Pollinations.
+      setStep("imagery", { status: "running", detail: "generating 3 shots…" });
+      let heroImg: string | undefined;
+      try {
+        const ar = spec.aspectRatio as AspectRatioKey;
+        const cat = useEditor.getState().project.brand.category;
+        const subject = prompt.trim();
+
+        const heroPrompt = `A proud uniformed crew / happy customer scene for a ${cat} business. Context: ${subject}. Warm, trustworthy, premium local-business hero shot.`;
+        const beforePrompt = `The "before" problem state for a ${cat} job — the mess / clutter / damage a customer wants gone. Context: ${subject}. Realistic, slightly moody, mid-afternoon light.`;
+        const afterPrompt = `The "after" result for a ${cat} job — spotless, transformed, satisfying. Context: ${subject}. Bright, clean, golden-hour glow.`;
+
+        const settle = await Promise.allSettled([
+          generateBananaImage(heroPrompt, ar, "pollinations"),
+          generateBananaImage(beforePrompt, ar, "pollinations"),
+          generateBananaImage(afterPrompt, ar, "pollinations"),
+        ]);
+        const [hero, before, after] = settle;
+        const patch: Partial<BrandInputs> = {};
+        if (hero.status === "fulfilled") {
+          patch.heroImage = hero.value.dataUrl;
+          heroImg = hero.value.dataUrl;
+        }
+        if (before.status === "fulfilled") patch.beforeImage = before.value.dataUrl;
+        if (after.status === "fulfilled") patch.afterImage = after.value.dataUrl;
+        if (Object.keys(patch).length) useEditor.getState().updateBrand(patch);
+
+        const ok = settle.filter((s) => s.status === "fulfilled").length;
+        setStep("imagery", { status: "done", detail: `${ok}/3 cinematic shots` });
+      } catch (e) {
+        setStep("imagery", { status: "done", detail: "skipped (no generator available)" });
+      }
+
+      // Now build the template — it reads the brand's before/after/hero images
+      const ed2 = useEditor.getState();
+      ed2.loadTemplate(spec.templateId);
+      // Give scene 0 the hero image background if it's still a plain gradient
+      const built = useEditor.getState().project;
+      const firstScene = built.scenes[0];
+      if (heroImg && firstScene && firstScene.background.kind === "gradient") {
+        ed2.updateScene(firstScene.id, {
+          background: { kind: "image", src: heroImg, fit: "cover", overlay: "rgba(0,0,0,0.4)" },
+        });
+      }
+      // sceneOverrides from the AI copy
       const fresh = useEditor.getState().project;
       for (const o of spec.sceneOverrides ?? []) {
         const sc = fresh.scenes[o.sceneIndex];
         if (!sc) continue;
         const layer = sc.layers[o.layerIndex];
         if (!layer || layer.type !== "text") continue;
-        editor.updateLayer(sc.id, layer.id, { text: o.text });
-      }
-
-      // 2. Imagery (free Pollinations fallback works even without Gemini billing)
-      setStep("imagery", { status: "running" });
-      try {
-        const ar = useEditor.getState().project.aspectRatio;
-        const cat = useEditor.getState().project.brand.category;
-        const heroPrompt = `Hero shot for a ${cat} ad. ${prompt}`;
-        // Default to free Pollinations so the user isn't blocked by Google Cloud
-        // billing on the Gemini key. Operator can change the renderer in the AI
-        // tab of the editor if they prefer Nano Banana.
-        const img = await generateBananaImage(heroPrompt, ar, "pollinations");
-        const sceneId = useEditor.getState().project.scenes[0]?.id;
-        if (sceneId) {
-          useEditor.getState().updateScene(sceneId, {
-            background: { kind: "image", src: img.dataUrl, fit: "cover", overlay: "rgba(0,0,0,0.45)" },
-          });
-        }
-        setStep("imagery", { status: "done", detail: `via ${img.source}` });
-      } catch (e) {
-        setStep("imagery", {
-          status: "done",
-          detail: "skipped (no generator available)",
-        });
+        ed2.updateLayer(sc.id, layer.id, { text: o.text });
       }
 
       // 2b. Music (based on tone)
