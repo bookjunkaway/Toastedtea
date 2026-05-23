@@ -97,12 +97,15 @@ async function tryNanoBanana(prompt: string, aspect: string | undefined, apiKey:
 
 async function tryPollinations(prompt: string, aspect: string | undefined): Promise<GenResult> {
   const { width, height } = aspectDimensions(aspect);
+  // Cinematic photography direction — this is what turns a flat AI image into
+  // something that looks like a real ad. The subject comes from the caller.
   const styled = [
-    "Photorealistic Meta video-ad still for a Tampa Florida junk removal company.",
-    "Bright Florida light, family-owned vibe.",
-    aspectGuidance(aspect),
-    "No on-image text. Leave space for overlay copy.",
-    `Subject: ${prompt}`,
+    prompt,
+    "professional advertising photography, shot on Sony A7 IV, 35mm lens, f/1.8,",
+    "cinematic color grade, golden hour natural light, high dynamic range,",
+    "ultra detailed, 8k, sharp focus, shallow depth of field,",
+    "rule-of-thirds composition with clean negative space for text overlay,",
+    "no text, no watermark, no logo.",
   ].join(" ");
   const seed = Math.floor(Math.random() * 1_000_000);
   const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(styled)}?width=${width}&height=${height}&model=flux&nologo=true&enhance=true&seed=${seed}`;
