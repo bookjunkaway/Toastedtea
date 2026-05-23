@@ -21,7 +21,7 @@ import { wrapWithBrandSting } from "@/lib/memorability";
 import { renderScene, preloadScenes } from "@/lib/renderer";
 import { generateBananaImage } from "@/lib/nanoBanana";
 import { Mood, generateTrack } from "@/lib/music";
-import { projectToScript, speakLive } from "@/lib/voiceover";
+import { projectToScript, speakLive, generateTtsAudio, mixAudio } from "@/lib/voiceover";
 import { leadFormUrl, useLeads, LeadFormSpec } from "@/lib/leads";
 import { canShareFiles, shareToSheet, PLATFORM_UPLOAD_URLS } from "@/lib/share";
 import { Share2, ExternalLink, Copy } from "lucide-react";
@@ -201,8 +201,9 @@ function QuickBody() {
         ed2.updateLayer(sc.id, layer.id, { text: o.text });
       }
 
-      // 2b. Music (based on tone)
+      // 2b. Music (based on tone) — and optional neural voiceover mixed in
       setStep("music", { status: "running" });
+      let musicUrl: string | undefined;
       try {
         const moodMap: Record<Tone, Mood> = {
           punchy: "punchy",
@@ -212,26 +213,46 @@ function QuickBody() {
         };
         const mood = moodMap[tone];
         const track = await generateTrack(mood, 30);
+        musicUrl = track.dataUrl;
         useEditor.getState().setAudio({ src: track.dataUrl, name: track.name, volume: 0.65 });
         setStep("music", { status: "done", detail: `${mood} track` });
       } catch (e) {
         setStep("music", { status: "done", detail: "skipped" });
       }
 
-      // 3. Polish: brand sting + magic fix
+      // 3. Polish: brand sting + magic fix (do this before voiceover so the
+      //    script reflects the final scene copy)
       setStep("polish", { status: "running" });
       useEditor.setState((s) => ({ project: wrapWithBrandSting(magicFix(s.project)) }));
       setStep("polish", { status: "done", detail: "brand sting + policy fixes applied" });
+
+      // 3b. Neural voiceover (ElevenLabs / Gemini) — baked into the audio track,
+      //     mixed over ducked music. Falls back to browser speak at render time.
+      let useLiveSpeak = false;
+      if (addVoice) {
+        const script = projectToScript(useEditor.getState().project);
+        const tts = script ? await generateTtsAudio(script) : null;
+        if (tts) {
+          const mixed = await mixAudio(tts.dataUrl, musicUrl, { voiceGain: 1.0, musicGain: 0.16 });
+          useEditor.getState().setAudio({
+            src: mixed ?? tts.dataUrl,
+            name: `voiceover-${tts.source}`,
+            volume: 1.0,
+          });
+        } else {
+          // No server TTS configured → fall back to live browser speak at render
+          useLiveSpeak = true;
+        }
+      }
 
       // 4. Render
       setStep("render", { status: "running" });
       const project = useEditor.getState().project;
 
-      // Kick off voice-over if requested. We speak the project's captions
-      // live while the canvas renders — the audio is not baked into the
-      // file but the operator hears it during preview. Music IS baked in.
+      // Only live-speak when neural TTS wasn't available (no ElevenLabs/Gemini
+      // key). Otherwise the human voiceover is already baked into project.audio.
       let cancelVoice: (() => void) | null = null;
-      if (addVoice) {
+      if (useLiveSpeak) {
         const script = projectToScript(project);
         if (script) cancelVoice = speakLive(script);
       }
