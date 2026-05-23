@@ -76,6 +76,13 @@ export const useLeads = create<LeadStore>()(
       notifyEmail: "",
       setNotifyEmail: (email) => set({ notifyEmail: email.trim() }),
       createFormFromProject: (p) => {
+        // Never embed data-URL images in the form spec — they'd be encoded
+        // into the lead-form URL and blow past URL length limits, breaking
+        // the page. Only keep small http(s)/relative references (e.g. /logo.svg).
+        const safeHero =
+          p.brand.heroImage && !p.brand.heroImage.startsWith("data:")
+            ? p.brand.heroImage
+            : "/logo.svg";
         const f: LeadFormSpec = {
           id: uid("lf"),
           brand: {
@@ -86,7 +93,7 @@ export const useLeads = create<LeadStore>()(
             website: p.brand.website,
             offer: p.brand.offer,
             cta: p.brand.cta,
-            heroImage: p.brand.heroImage,
+            heroImage: safeHero,
           },
           palette: p.palette,
           createdAt: Date.now(),
