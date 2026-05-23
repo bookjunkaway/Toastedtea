@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { ArrowLeft, CheckCircle2, Download, Loader2, Sparkles, Wand2 } from "lucide-react";
 import { useEditor, sceneAtTime, totalDuration } from "@/lib/store";
-import { ASPECT_RATIOS, AspectRatioKey, BrandInputs } from "@/lib/types";
+import { ASPECT_RATIOS, AspectRatioKey, BrandInputs, COMMON_CATEGORIES } from "@/lib/types";
 import {
   exportProjectVideo,
   exportProjectForPlatforms,
@@ -68,6 +68,7 @@ function QuickBody() {
   const [bulkResults, setBulkResults] = useState<PlatformExportResult[]>([]);
   const [tone, setTone] = useState<Tone>("punchy");
   const [addVoice, setAddVoice] = useState(false);
+  const [showBrandQuick, setShowBrandQuick] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Live preview during render
@@ -332,6 +333,72 @@ function QuickBody() {
         }}
         className="panel p-4"
       >
+        {/* Inline brand quick-edit — company, category, website, phone, offer */}
+        <div className="rounded-lg bg-white/5 border border-white/10 p-3 mb-3">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs font-bold uppercase tracking-wider text-white/60">Your business</div>
+            <button
+              type="button"
+              onClick={() => setShowBrandQuick((v) => !v)}
+              className="text-[11px] text-brand"
+            >
+              {showBrandQuick ? "Hide" : "Edit"}
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-1 text-[11px]">
+            <span className="chip">{project.brand.companyName}</span>
+            <span className="chip">{project.brand.category}</span>
+            <span className="chip">{project.brand.serviceArea.split("•")[0].trim() || "—"}</span>
+          </div>
+          {showBrandQuick && (
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <input
+                className="input col-span-2"
+                placeholder="Company name"
+                value={project.brand.companyName}
+                onChange={(e) =>
+                  useEditor.getState().updateBrand({ companyName: e.target.value })
+                }
+              />
+              <select
+                className="input col-span-2"
+                value={project.brand.category}
+                onChange={(e) => useEditor.getState().updateBrand({ category: e.target.value })}
+              >
+                {COMMON_CATEGORIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+              <input
+                className="input"
+                placeholder="Website"
+                value={project.brand.website}
+                onChange={(e) => useEditor.getState().updateBrand({ website: e.target.value })}
+              />
+              <input
+                className="input"
+                placeholder="Phone"
+                value={project.brand.phone}
+                onChange={(e) => useEditor.getState().updateBrand({ phone: e.target.value })}
+              />
+              <input
+                className="input col-span-2"
+                placeholder="Service area (e.g. Tampa • St. Pete • Brandon)"
+                value={project.brand.serviceArea}
+                onChange={(e) => useEditor.getState().updateBrand({ serviceArea: e.target.value })}
+              />
+              <input
+                className="input col-span-2"
+                placeholder="Offer (e.g. $50 OFF first pickup)"
+                value={project.brand.offer}
+                onChange={(e) => useEditor.getState().updateBrand({ offer: e.target.value })}
+              />
+            </div>
+          )}
+        </div>
+
         <textarea
           className="input min-h-[100px] text-base"
           placeholder='Describe your ad — e.g. "15s Reels for same-day garage cleanout with $50 off"'
