@@ -22,6 +22,7 @@ import { renderScene, preloadScenes } from "@/lib/renderer";
 import { generateBananaImage } from "@/lib/nanoBanana";
 import { Mood, generateTrack } from "@/lib/music";
 import { projectToScript, speakLive, generateTtsAudio, mixAudio } from "@/lib/voiceover";
+import { VOICE_PRESETS, getVoicePreset } from "@/lib/voices";
 import { leadFormUrl, useLeads, LeadFormSpec } from "@/lib/leads";
 import { canShareFiles, shareToSheet, PLATFORM_UPLOAD_URLS } from "@/lib/share";
 import { Share2, ExternalLink, Copy } from "lucide-react";
@@ -77,6 +78,7 @@ function QuickBody() {
   const [bulkResults, setBulkResults] = useState<PlatformExportResult[]>([]);
   const [tone, setTone] = useState<Tone>("punchy");
   const [addVoice, setAddVoice] = useState(false);
+  const [voiceId, setVoiceId] = useState<string>(VOICE_PRESETS[0].id);
 
   // Pre-fill from playbook deep-link: /quick?brief=...&tone=...
   useEffect(() => {
@@ -231,7 +233,13 @@ function QuickBody() {
       let useLiveSpeak = false;
       if (addVoice) {
         const script = projectToScript(useEditor.getState().project);
-        const tts = script ? await generateTtsAudio(script) : null;
+        const preset = getVoicePreset(voiceId);
+        const tts = script
+          ? await generateTtsAudio(script, {
+              elevenLabsId: preset?.elevenLabsId,
+              geminiVoice: preset?.geminiVoice,
+            })
+          : null;
         if (tts) {
           const mixed = await mixAudio(tts.dataUrl, musicUrl, { voiceGain: 1.0, musicGain: 0.16 });
           useEditor.getState().setAudio({
@@ -550,11 +558,28 @@ function QuickBody() {
           <div className="text-sm">
             <div className="font-semibold">Add voiceover (reads your captions aloud)</div>
             <div className="text-[11px] text-white/50">
-              Uses your browser&apos;s built-in voice. Works well on Chrome/Edge desktop.
-              On iOS the audio plays live during render — keep the volume up.
+              Human neural voice (ElevenLabs / Gemini) baked over ducked music.
+              Falls back to the browser voice if no TTS key is set.
             </div>
           </div>
         </label>
+        {addVoice && (
+          <div className="mt-2 pl-6">
+            <div className="label mb-1">Voice</div>
+            <select
+              className="input"
+              value={voiceId}
+              onChange={(e) => setVoiceId(e.target.value)}
+              disabled={busy}
+            >
+              {VOICE_PRESETS.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.label} — {v.vibe}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <button
           type="submit"
           disabled={busy || !prompt.trim()}

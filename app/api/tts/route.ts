@@ -101,7 +101,7 @@ async function geminiTts(text: string, voice?: string): Promise<string | null> {
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
-  let body: { text?: string; voice?: string } = {};
+  let body: { text?: string; elevenLabsId?: string; geminiVoice?: string } = {};
   try {
     body = await req.json();
   } catch {
@@ -112,7 +112,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   // 1. ElevenLabs (best)
   try {
-    const el = await elevenLabs(text, body.voice);
+    const el = await elevenLabs(text, body.elevenLabsId);
     if (el) return NextResponse.json({ dataUrl: el, source: "elevenlabs" });
   } catch {
     /* fall through */
@@ -120,7 +120,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   // 2. Gemini TTS
   try {
-    const g = await geminiTts(text, body.voice);
+    const g = await geminiTts(text, body.geminiVoice);
     if (g) return NextResponse.json({ dataUrl: g, source: "gemini" });
   } catch {
     /* fall through */

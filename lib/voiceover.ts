@@ -18,12 +18,15 @@ import { Project, Scene } from "./types";
 /** Request a human-sounding voiceover from the server (ElevenLabs/Gemini).
  *  Returns a data URL, or null if no server TTS is configured (caller can
  *  then fall back to browser speakLive). */
-export async function generateTtsAudio(text: string): Promise<{ dataUrl: string; source: string } | null> {
+export async function generateTtsAudio(
+  text: string,
+  voice?: { elevenLabsId?: string; geminiVoice?: string },
+): Promise<{ dataUrl: string; source: string } | null> {
   try {
     const r = await fetch("/api/tts", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, ...voice }),
     });
     if (!r.ok) return null;
     return (await r.json()) as { dataUrl: string; source: string };
