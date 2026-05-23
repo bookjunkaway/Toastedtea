@@ -1,7 +1,7 @@
 "use client";
 
 import { useEditor } from "@/lib/store";
-import { BrandInputs } from "@/lib/types";
+import { BrandInputs, COMMON_CATEGORIES } from "@/lib/types";
 
 export function BrandPanel() {
   const brand = useEditor((s) => s.project.brand);
@@ -38,6 +38,23 @@ export function BrandPanel() {
       <div className="grid grid-cols-2 gap-2">
         {field("companyName", "Company")}
         {field("phone", "Phone")}
+      </div>
+      <div>
+        <div className="label mb-1">Category / industry</div>
+        <select
+          className="input"
+          value={brand.category}
+          onChange={(e) => updateBrand({ category: e.target.value })}
+        >
+          {COMMON_CATEGORIES.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+        <div className="text-[10px] text-white/40 mt-1">
+          Drives the AI prompt&apos;s tone + copy. Switch to anything — Plumbing, Cleaning, Salon, Restaurant, Real Estate, etc.
+        </div>
       </div>
       {field("tagline", "Tagline")}
       {field("website", "Website")}

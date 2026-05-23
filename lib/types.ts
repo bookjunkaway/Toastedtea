@@ -145,6 +145,8 @@ export type AdGoal =
 
 export interface BrandInputs {
   companyName: string;
+  /** Industry / service category — drives copy & inspiration set */
+  category: string;
   tagline: string;
   serviceArea: string;
   phone: string;
@@ -158,6 +160,30 @@ export interface BrandInputs {
   heroImage?: string;
   cta: string;
 }
+
+export const COMMON_CATEGORIES = [
+  "Junk Removal",
+  "Cleaning Services",
+  "Lawn Care / Landscaping",
+  "Pressure Washing",
+  "HVAC",
+  "Plumbing",
+  "Roofing",
+  "Moving Services",
+  "Pool Service",
+  "Pest Control",
+  "Auto Detailing",
+  "Painting",
+  "Real Estate",
+  "Restaurant",
+  "Gym / Fitness",
+  "Salon / Barber",
+  "Med Spa",
+  "Dentist",
+  "Auto Repair",
+  "Tree Service",
+  "Other",
+];
 
 export interface Project {
   id: string;
@@ -213,6 +239,7 @@ export const DEFAULT_PALETTE: Project["palette"] = {
 
 export const DEFAULT_BRAND: BrandInputs = {
   companyName: "Book Junk Away",
+  category: "Junk Removal",
   tagline: "Book It • Junk It • Away It",
   serviceArea: "Tampa • St. Pete • Clearwater • Brandon • Wesley Chapel",
   phone: "(727) 288-4847",
