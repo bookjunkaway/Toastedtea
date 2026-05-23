@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { ArrowLeft, CheckCircle2, Download, Loader2, Sparkles, Wand2 } from "lucide-react";
 import { useEditor, sceneAtTime, totalDuration } from "@/lib/store";
@@ -21,6 +22,9 @@ import { renderScene, preloadScenes } from "@/lib/renderer";
 import { generateBananaImage } from "@/lib/nanoBanana";
 import { Mood, generateTrack } from "@/lib/music";
 import { projectToScript, speakLive } from "@/lib/voiceover";
+import { leadFormUrl, useLeads, LeadFormSpec } from "@/lib/leads";
+import { canShareFiles, shareToSheet, PLATFORM_UPLOAD_URLS } from "@/lib/share";
+import { Share2, ExternalLink, Copy } from "lucide-react";
 
 type StepKey = "copy" | "imagery" | "music" | "polish" | "render" | "done";
 
@@ -57,7 +61,11 @@ const TONES: { id: Tone; label: string; mood: Mood }[] = [
 ];
 
 function QuickBody() {
+  const search = useSearchParams();
   const [prompt, setPrompt] = useState("");
+  const [leadForm, setLeadForm] = useState<LeadFormSpec | null>(null);
+  const [leadUrlCopied, setLeadUrlCopied] = useState(false);
+  const createForm = useLeads((s) => s.createFormFromProject);
   const [steps, setSteps] = useState<Step[]>(INITIAL_STEPS);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -68,6 +76,16 @@ function QuickBody() {
   const [bulkResults, setBulkResults] = useState<PlatformExportResult[]>([]);
   const [tone, setTone] = useState<Tone>("punchy");
   const [addVoice, setAddVoice] = useState(false);
+
+  // Pre-fill from playbook deep-link: /quick?brief=...&tone=...
+  useEffect(() => {
+    const brief = search.get("brief");
+    if (brief) setPrompt(brief);
+    const t = search.get("tone");
+    if (t === "punchy" || t === "funny" || t === "cinematic" || t === "chill") {
+      setTone(t);
+    }
+  }, [search]);
   const [showBrandQuick, setShowBrandQuick] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -208,8 +226,12 @@ function QuickBody() {
               : `${done}/${platforms.length} platforms done`;
           setStep("render", { status: "running", detail: label });
         });
-        for (const r of results) {
-          downloadBlob(r.blob, `${safeName}__${r.platform.id}.${extensionFor(r.mimeType)}`);
+        // Only auto-download if direct share isn't available (e.g. desktop)
+        // — on iOS we want the operator to use the Share button per platform.
+        if (!canShareFiles()) {
+          for (const r of results) {
+            downloadBlob(r.blob, `${safeName}__${r.platform.id}.${extensionFor(r.mimeType)}`);
+          }
         }
         setBulkResults(results);
         // Pick a representative one to show in the inline player (prefer Reels)
@@ -245,6 +267,10 @@ function QuickBody() {
       }
 
       if (cancelVoice) cancelVoice();
+
+      // Generate a shareable lead form for this ad
+      const formSpec = createForm(useEditor.getState().project);
+      setLeadForm(formSpec);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
@@ -564,32 +590,102 @@ function QuickBody() {
                 </div>
               )}
               {bulkResults.length === 0 ? (
-                <a href={resultUrl} download={resultName} className="btn-primary w-full">
-                  <Download className="size-4" /> Download {resultName}
-                </a>
+                <div className="grid grid-cols-2 gap-2">
+                  <a href={resultUrl} download={resultName} className="btn-primary">
+                    <Download className="size-4" /> Download
+                  </a>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const r = await fetch(resultUrl);
+                        const blob = await r.blob();
+                        await shareToSheet({
+                          blob,
+                          filename: resultName,
+                          title: project.brand.companyName,
+                          text: project.brand.offer,
+                        });
+                      } catch {}
+                    }}
+                    disabled={!canShareFiles()}
+                    className="btn-ghost"
+                    title={canShareFiles() ? "Share to IG / TikTok / FB" : "Direct share not supported on this browser"}
+                  >
+                    <Share2 className="size-4" /> Share
+                  </button>
+                </div>
               ) : (
                 <div className="space-y-1">
-                  <div className="label">Downloaded {bulkResults.length} platform files</div>
-                  <ul className="space-y-1 max-h-44 overflow-auto">
+                  <div className="label">{bulkResults.length} platform files ready</div>
+                  <ul className="space-y-1 max-h-56 overflow-auto">
                     {bulkResults.map((r) => {
                       const fname = `${(resultName.split("__")[0]) || "ad"}__${r.platform.id}.${extensionFor(r.mimeType)}`;
+                      const composerKey =
+                        r.platform.id === "meta-reels"
+                          ? "ig-reels"
+                          : r.platform.id === "meta-stories"
+                          ? "ig-reels"
+                          : r.platform.id === "meta-feed-portrait" || r.platform.id === "meta-feed-square"
+                          ? "fb-feed"
+                          : r.platform.id === "tiktok"
+                          ? "tiktok"
+                          : r.platform.id === "yt-shorts"
+                          ? "yt-shorts"
+                          : r.platform.id === "yt-standard"
+                          ? "yt-standard"
+                          : r.platform.id.startsWith("linkedin")
+                          ? "linkedin"
+                          : r.platform.id.startsWith("pinterest")
+                          ? "pinterest"
+                          : r.platform.id === "snapchat"
+                          ? "snapchat"
+                          : null;
+                      const composer = composerKey ? PLATFORM_UPLOAD_URLS[composerKey] : null;
                       return (
-                        <li key={r.platform.id} className="flex items-center justify-between gap-2 text-xs bg-white/5 rounded px-2 py-1.5">
-                          <span className="truncate">
-                            <span className="text-brand font-semibold">{r.platform.name}</span>
-                            <span className="text-white/40 ml-2">
-                              {r.platform.width}×{r.platform.height} · {r.durationSeconds.toFixed(1)}s
+                        <li key={r.platform.id} className="bg-white/5 rounded-lg px-2 py-2">
+                          <div className="flex items-center justify-between gap-2 text-xs">
+                            <span className="truncate">
+                              <span className="text-brand font-semibold">{r.platform.name}</span>
+                              <span className="text-white/40 ml-2">
+                                {r.platform.width}×{r.platform.height} · {r.durationSeconds.toFixed(1)}s
+                              </span>
+                              {r.trimmed && <span className="ml-2 text-amber-300">trimmed</span>}
                             </span>
-                            {r.trimmed && <span className="ml-2 text-amber-300">trimmed</span>}
-                          </span>
-                          <a
-                            href={URL.createObjectURL(r.blob)}
-                            download={fname}
-                            className="text-brand hover:text-brand-300"
-                            aria-label={`Re-download ${r.platform.name}`}
-                          >
-                            <Download className="size-3.5" />
-                          </a>
+                          </div>
+                          <div className="mt-1.5 grid grid-cols-3 gap-1">
+                            <button
+                              onClick={() =>
+                                shareToSheet({
+                                  blob: r.blob,
+                                  filename: fname,
+                                  title: project.brand.companyName,
+                                  text: project.brand.offer,
+                                })
+                              }
+                              disabled={!canShareFiles()}
+                              className="btn-primary h-8 px-2 text-[11px]"
+                            >
+                              <Share2 className="size-3" /> Share
+                            </button>
+                            <a
+                              href={URL.createObjectURL(r.blob)}
+                              download={fname}
+                              className="btn-ghost h-8 px-2 text-[11px]"
+                            >
+                              <Download className="size-3" /> Save
+                            </a>
+                            {composer && (
+                              <a
+                                href={composer.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="btn-ghost h-8 px-2 text-[11px]"
+                                title={`Open ${composer.label} composer`}
+                              >
+                                <ExternalLink className="size-3" /> Post
+                              </a>
+                            )}
+                          </div>
                         </li>
                       );
                     })}
@@ -599,6 +695,40 @@ function QuickBody() {
               <Link href="/editor" className="btn-ghost w-full">
                 Tweak in the full studio →
               </Link>
+            </div>
+          )}
+
+          {leadForm && (
+            <div className="mt-3 pt-3 border-t border-white/10">
+              <div className="label mb-1">Lead capture URL — paste this as your ad&apos;s destination</div>
+              <div className="rounded-md bg-white/5 border border-white/10 p-2 text-[10px] break-all">
+                {leadFormUrl(leadForm)}
+              </div>
+              <div className="mt-1 grid grid-cols-2 gap-1">
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(leadFormUrl(leadForm));
+                    setLeadUrlCopied(true);
+                    setTimeout(() => setLeadUrlCopied(false), 1500);
+                  }}
+                  className="btn-primary h-8 text-[11px]"
+                >
+                  <Copy className="size-3" /> {leadUrlCopied ? "Copied!" : "Copy"}
+                </button>
+                <a
+                  href={leadFormUrl(leadForm)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn-ghost h-8 text-[11px]"
+                >
+                  <ExternalLink className="size-3" /> Preview
+                </a>
+              </div>
+              {!leadForm.notifyEmail && (
+                <div className="text-[10px] text-amber-300 mt-1">
+                  ⚠ No notify email set. <Link href="/settings" className="underline">Set it</Link> so leads land in your inbox.
+                </div>
+              )}
             </div>
           )}
         </div>

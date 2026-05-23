@@ -51,8 +51,14 @@ export default function LandingPage() {
               <Link className="btn-primary text-base px-5 py-3" href="/quick">
                 <Wand2 className="size-4" /> One-prompt ad
               </Link>
-              <Link className="btn-ghost text-base px-5 py-3" href="/editor">
-                Open full studio
+              <Link className="btn-ghost text-base px-5 py-3" href="/playbook">
+                📒 Playbook
+              </Link>
+              <Link className="btn-ghost text-base px-5 py-3" href="/leads">
+                📥 Leads
+              </Link>
+              <Link className="btn-ghost text-base px-5 py-3" href="/settings">
+                ⚙️ Settings
               </Link>
               <Link className="btn-ghost text-base px-5 py-3" href="/live">
                 🚚 Live 3D
