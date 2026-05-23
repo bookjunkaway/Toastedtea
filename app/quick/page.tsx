@@ -19,8 +19,10 @@ import { magicFix } from "@/lib/convertScore";
 import { wrapWithBrandSting } from "@/lib/memorability";
 import { renderScene, preloadScenes } from "@/lib/renderer";
 import { generateBananaImage } from "@/lib/nanoBanana";
+import { Mood, generateTrack } from "@/lib/music";
+import { projectToScript, speakLive } from "@/lib/voiceover";
 
-type StepKey = "copy" | "imagery" | "polish" | "render" | "done";
+type StepKey = "copy" | "imagery" | "music" | "polish" | "render" | "done";
 
 interface Step {
   key: StepKey;
@@ -31,17 +33,27 @@ interface Step {
 
 const INITIAL_STEPS: Step[] = [
   { key: "copy", label: "Writing your ad copy", status: "pending" },
-  { key: "imagery", label: "Generating Tampa imagery", status: "pending" },
+  { key: "imagery", label: "Generating imagery", status: "pending" },
+  { key: "music", label: "Composing music", status: "pending" },
   { key: "polish", label: "Polishing for Meta", status: "pending" },
   { key: "render", label: "Rendering video", status: "pending" },
 ];
 
 const SUGGESTED_PROMPTS = [
   "15-second Reels ad for a same-day garage cleanout with $50 off",
+  "FUNNY tier list of stuff in a Tampa garage",
+  'FUNNY "things our crew heard" testimonial ad',
   "Before/after hoarder cleanout in South Tampa with 5-star reviews",
   "Hurricane debris cleanup ad — book today, gone today",
   "Estate cleanout ad targeted at realtors in Tampa Bay",
-  "Family-owned, insured Tampa junk removal — trust builder",
+];
+
+type Tone = "punchy" | "funny" | "cinematic" | "chill";
+const TONES: { id: Tone; label: string; mood: Mood }[] = [
+  { id: "punchy", label: "Punchy", mood: "punchy" },
+  { id: "funny", label: "Funny", mood: "funny" },
+  { id: "cinematic", label: "Cinematic", mood: "cinematic" },
+  { id: "chill", label: "Chill", mood: "chill" },
 ];
 
 function QuickBody() {
@@ -54,6 +66,8 @@ function QuickBody() {
   const [resultMime, setResultMime] = useState<string>("video/mp4");
   const [exportAll, setExportAll] = useState(true);
   const [bulkResults, setBulkResults] = useState<PlatformExportResult[]>([]);
+  const [tone, setTone] = useState<Tone>("punchy");
+  const [addVoice, setAddVoice] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // Live preview during render
@@ -74,10 +88,20 @@ function QuickBody() {
     try {
       // 1. Ad copy via /api/generate-ad
       setStep("copy", { status: "running" });
+      const currentBrand = useEditor.getState().project.brand;
       const adRes = await fetch("/api/generate-ad", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ instruction: prompt, currentAspect: "9:16" }),
+        body: JSON.stringify({
+          instruction: prompt,
+          currentAspect: "9:16",
+          tone,
+          brand: {
+            companyName: currentBrand.companyName,
+            category: currentBrand.category,
+            serviceArea: currentBrand.serviceArea,
+          },
+        }),
       });
       if (!adRes.ok) throw new Error(`Copy generation failed: HTTP ${adRes.status}`);
       const adJson = await adRes.json();
@@ -108,8 +132,12 @@ function QuickBody() {
       setStep("imagery", { status: "running" });
       try {
         const ar = useEditor.getState().project.aspectRatio;
-        const heroPrompt = `Hero shot for: ${prompt}. Photoreal Tampa Florida.`;
-        const img = await generateBananaImage(heroPrompt, ar, "auto");
+        const cat = useEditor.getState().project.brand.category;
+        const heroPrompt = `Hero shot for a ${cat} ad. ${prompt}`;
+        // Default to free Pollinations so the user isn't blocked by Google Cloud
+        // billing on the Gemini key. Operator can change the renderer in the AI
+        // tab of the editor if they prefer Nano Banana.
+        const img = await generateBananaImage(heroPrompt, ar, "pollinations");
         const sceneId = useEditor.getState().project.scenes[0]?.id;
         if (sceneId) {
           useEditor.getState().updateScene(sceneId, {
@@ -124,6 +152,23 @@ function QuickBody() {
         });
       }
 
+      // 2b. Music (based on tone)
+      setStep("music", { status: "running" });
+      try {
+        const moodMap: Record<Tone, Mood> = {
+          punchy: "punchy",
+          funny: "funny",
+          cinematic: "cinematic",
+          chill: "chill",
+        };
+        const mood = moodMap[tone];
+        const track = await generateTrack(mood, 30);
+        useEditor.getState().setAudio({ src: track.dataUrl, name: track.name, volume: 0.65 });
+        setStep("music", { status: "done", detail: `${mood} track` });
+      } catch (e) {
+        setStep("music", { status: "done", detail: "skipped" });
+      }
+
       // 3. Polish: brand sting + magic fix
       setStep("polish", { status: "running" });
       useEditor.setState((s) => ({ project: wrapWithBrandSting(magicFix(s.project)) }));
@@ -132,6 +177,16 @@ function QuickBody() {
       // 4. Render
       setStep("render", { status: "running" });
       const project = useEditor.getState().project;
+
+      // Kick off voice-over if requested. We speak the project's captions
+      // live while the canvas renders — the audio is not baked into the
+      // file but the operator hears it during preview. Music IS baked in.
+      let cancelVoice: (() => void) | null = null;
+      if (addVoice) {
+        const script = projectToScript(project);
+        if (script) cancelVoice = speakLive(script);
+      }
+
       const safeName =
         prompt
           .replace(/[^a-z0-9-_ ]+/gi, "")
@@ -187,12 +242,18 @@ function QuickBody() {
         });
         downloadBlob(out.blob, filename);
       }
+
+      if (cancelVoice) cancelVoice();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
       setSteps((prev) => prev.map((s) => (s.status === "running" ? { ...s, status: "error", detail: msg } : s)));
     } finally {
       setBusy(false);
+      // Always cancel any pending speech if we crashed mid-render
+      if (typeof window !== "undefined" && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
     }
   };
 
@@ -278,6 +339,33 @@ function QuickBody() {
           onChange={(e) => setPrompt(e.target.value)}
           disabled={busy}
         />
+        <div className="mt-3">
+          <div className="label mb-1">Tone</div>
+          <div className="grid grid-cols-4 gap-1">
+            {TONES.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setTone(t.id)}
+                disabled={busy}
+                className={`btn-ghost h-9 text-xs ${
+                  tone === t.id ? "ring-1 ring-brand/60 bg-brand/10" : ""
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <div className="text-[10px] text-white/40 mt-1">
+            {tone === "funny"
+              ? "Picks a comedy template (tier list, things-our-crew-heard, etc.) + bouncy shuffle music."
+              : tone === "cinematic"
+              ? "Slow build, evocative imagery, swelling pads."
+              : tone === "chill"
+              ? "Calm, friendly, trustworthy. Mellow loop."
+              : "Tight hook + urgency + drum-driven track."}
+          </div>
+        </div>
         <div className="mt-2 -mx-1 flex gap-1 overflow-x-auto pb-1 px-1">
           {SUGGESTED_PROMPTS.map((s) => (
             <button
@@ -304,6 +392,22 @@ function QuickBody() {
             <div className="text-[11px] text-white/50">
               Downloads {DEFAULT_PLATFORM_BUNDLE.length} files — Meta Reels, Feed Portrait + Square, TikTok, YT Shorts.
               Uncheck for a single render in the current aspect.
+            </div>
+          </div>
+        </label>
+        <label className="flex items-start gap-2 mt-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={addVoice}
+            onChange={(e) => setAddVoice(e.target.checked)}
+            disabled={busy}
+            className="mt-1 size-4 accent-brand"
+          />
+          <div className="text-sm">
+            <div className="font-semibold">Add voiceover (reads your captions aloud)</div>
+            <div className="text-[11px] text-white/50">
+              Uses your browser&apos;s built-in voice. Works well on Chrome/Edge desktop.
+              On iOS the audio plays live during render — keep the volume up.
             </div>
           </div>
         </label>

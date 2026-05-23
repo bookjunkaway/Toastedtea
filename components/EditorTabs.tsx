@@ -8,14 +8,16 @@ import { BrandPanel } from "./BrandPanel";
 import { NanoBananaPanel } from "./NanoBananaPanel";
 import { BoostPanel } from "./BoostPanel";
 import { ClientPanel } from "./ClientPanel";
+import { MusicPanel } from "./MusicPanel";
 
-type Tab = "design" | "templates" | "brand" | "ai" | "boost" | "clients";
+type Tab = "design" | "templates" | "brand" | "ai" | "music" | "boost" | "clients";
 
 const TABS: [Tab, string][] = [
   ["design", "Design"],
   ["templates", "Templates"],
   ["brand", "Brand"],
   ["ai", "AI"],
+  ["music", "Music"],
   ["boost", "Boost"],
   ["clients", "Clients"],
 ];
@@ -43,6 +45,7 @@ export function EditorTabs() {
         {tab === "templates" && <TemplateGallery />}
         {tab === "brand" && <BrandPanel />}
         {tab === "ai" && <NanoBananaPanel />}
+        {tab === "music" && <MusicPanel />}
         {tab === "boost" && <BoostPanel />}
         {tab === "clients" && <ClientPanel />}
       </div>
