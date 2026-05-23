@@ -18,6 +18,12 @@ import {
  * ────────────────────────────────────────────────────────────────────────── */
 
 const imageCache = new Map<string, HTMLImageElement>();
+const failedSrcs = new Set<string>();
+
+/** A stalled remote request (slow CDN, dead AI-image URL) fires neither
+ *  `onload` nor `onerror`, so without this bound the promise never settles
+ *  and any awaiting caller — most importantly the exporter — hangs forever. */
+const IMAGE_LOAD_TIMEOUT_MS = 8000;
 
 export function loadImage(src: string): Promise<HTMLImageElement> {
   const cached = imageCache.get(src);
@@ -27,16 +33,35 @@ export function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = "anonymous";
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      img.src = ""; // abort the in-flight request
+      failedSrcs.add(src);
+      reject(new Error(`Image load timed out: ${src}`));
+    }, IMAGE_LOAD_TIMEOUT_MS);
     img.onload = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
       imageCache.set(src, img);
       resolve(img);
     };
-    img.onerror = (e) => reject(e);
+    img.onerror = (e) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      failedSrcs.add(src);
+      reject(e instanceof Error ? e : new Error(`Image load failed: ${src}`));
+    };
     img.src = src;
   });
 }
 
-/** Pre-warm image cache so the first paint isn't a flicker. */
+/** Pre-warm image cache so the first paint isn't a flicker. Known-bad srcs are
+ *  skipped so a single dead URL doesn't re-incur the timeout on every export
+ *  in a multi-platform run. */
 export async function preloadScenes(scenes: Scene[]): Promise<void> {
   const srcs = new Set<string>();
   for (const sc of scenes) {
@@ -45,7 +70,9 @@ export async function preloadScenes(scenes: Scene[]): Promise<void> {
       if (l.type === "image") srcs.add(l.src);
     }
   }
-  await Promise.allSettled([...srcs].map(loadImage));
+  await Promise.allSettled(
+    [...srcs].filter((s) => !failedSrcs.has(s)).map(loadImage),
+  );
 }
 
 function easeInOut(t: number): number {
