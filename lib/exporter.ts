@@ -43,6 +43,119 @@ export function isMp4(mime: string): boolean {
   return mime.startsWith("video/mp4");
 }
 
+/** Attach project audio to the capture stream — resilient and non-blocking.
+ *  iOS keeps an AudioContext suspended until a user gesture; if it can't be
+ *  resumed (or decode is slow / fails), we skip audio rather than let the
+ *  MediaRecorder hang waiting for samples that never arrive. */
+async function attachAudio(
+  stream: MediaStream,
+  project: Project,
+): Promise<() => void> {
+  if (!project.audio?.src) return () => {};
+  let audioCtx: AudioContext | null = null;
+  let source: AudioBufferSourceNode | null = null;
+  try {
+    audioCtx = new AudioContext();
+    // Try to resume; if it stays suspended we bail (no hang)
+    if (audioCtx.state === "suspended") {
+      await Promise.race([
+        audioCtx.resume(),
+        new Promise((r) => setTimeout(r, 600)),
+      ]);
+    }
+    const decoded = await Promise.race([
+      (async () => {
+        const resp = await fetch(project.audio!.src);
+        const buf = await resp.arrayBuffer();
+        return audioCtx!.decodeAudioData(buf);
+      })(),
+      new Promise<null>((r) => setTimeout(() => r(null), 3000)),
+    ]);
+    if (!decoded) {
+      await audioCtx.close().catch(() => {});
+      return () => {};
+    }
+    const dest = audioCtx.createMediaStreamDestination();
+    const gain = audioCtx.createGain();
+    gain.gain.value = project.audio.volume ?? 0.7;
+    source = audioCtx.createBufferSource();
+    source.buffer = decoded;
+    source.loop = true;
+    source.connect(gain).connect(dest);
+    dest.stream.getAudioTracks().forEach((t) => stream.addTrack(t));
+    source.start();
+    return () => {
+      try {
+        source?.stop();
+      } catch {}
+      audioCtx?.close().catch(() => {});
+    };
+  } catch {
+    try {
+      audioCtx?.close().catch(() => {});
+    } catch {}
+    return () => {};
+  }
+}
+
+/** Drive the canvas render for `duration` seconds with a hard watchdog so it
+ *  always resolves even if requestAnimationFrame is throttled (backgrounded
+ *  tab, iOS share sheet, etc.). */
+async function driveRender(
+  duration: number,
+  onFrame: (t: number) => void,
+): Promise<void> {
+  await new Promise<void>((resolve) => {
+    const startedAt = performance.now();
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      resolve();
+    };
+    // Hard watchdog: never run longer than duration + 3s of wall clock
+    const watchdog = setTimeout(finish, (duration + 3) * 1000);
+    // Backup interval in case rAF is paused
+    const interval = setInterval(() => {
+      const elapsed = (performance.now() - startedAt) / 1000;
+      onFrame(Math.min(elapsed, duration));
+      if (elapsed >= duration) {
+        clearInterval(interval);
+        clearTimeout(watchdog);
+        finish();
+      }
+    }, 1000 / 30);
+    function frame() {
+      if (done) return;
+      const elapsed = (performance.now() - startedAt) / 1000;
+      onFrame(Math.min(elapsed, duration));
+      if (elapsed >= duration) {
+        clearInterval(interval);
+        clearTimeout(watchdog);
+        finish();
+        return;
+      }
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  });
+}
+
+/** Stop the recorder and wait for the final dataavailable/stop, with a
+ *  timeout so a stalled recorder can never hang the export forever. */
+async function stopRecorder(recorder: MediaRecorder): Promise<void> {
+  const stopped = new Promise<void>((resolve) => {
+    recorder.onstop = () => resolve();
+  });
+  try {
+    recorder.requestData?.();
+  } catch {}
+  try {
+    recorder.stop();
+  } catch {}
+  await Promise.race([stopped, new Promise((r) => setTimeout(r, 2500))]);
+}
+
 export function canPlayInline(mime: string): boolean {
   // iOS Safari can't play WebM. Detect Apple browsers via UA.
   if (typeof navigator === "undefined") return true;
@@ -74,75 +187,32 @@ export async function exportProjectVideo(
 
   const stream = canvas.captureStream(fps);
 
-  // Optional audio: mix project audio into the stream
-  let audioCtx: AudioContext | null = null;
-  let audioSourceNode: AudioBufferSourceNode | null = null;
-  if (project.audio?.src) {
-    try {
-      audioCtx = new AudioContext();
-      const resp = await fetch(project.audio.src);
-      const buf = await resp.arrayBuffer();
-      const audioBuf = await audioCtx.decodeAudioData(buf);
-      const dest = audioCtx.createMediaStreamDestination();
-      const gain = audioCtx.createGain();
-      gain.gain.value = project.audio.volume ?? 0.8;
-      audioSourceNode = audioCtx.createBufferSource();
-      audioSourceNode.buffer = audioBuf;
-      audioSourceNode.loop = true;
-      audioSourceNode.connect(gain).connect(dest);
-      dest.stream.getAudioTracks().forEach((t) => stream.addTrack(t));
-    } catch (err) {
-      console.warn("Audio mix failed, exporting silent video", err);
-    }
-  }
+  const duration = totalDuration(project);
+  if (duration <= 0) throw new Error("Project has no scenes to export");
+
+  // Resilient audio — never hangs the render
+  const detachAudio = await attachAudio(stream, project);
 
   const mimeType = pickMimeType();
   const recorder = new MediaRecorder(stream, {
     mimeType,
     videoBitsPerSecond: opts.bitsPerSecond ?? 6_000_000,
   });
-
   const chunks: BlobPart[] = [];
   recorder.ondataavailable = (e) => {
     if (e.data && e.data.size > 0) chunks.push(e.data);
   };
 
-  const duration = totalDuration(project);
-  if (duration <= 0) throw new Error("Project has no scenes to export");
-
-  const stopped = new Promise<void>((resolve) => {
-    recorder.onstop = () => resolve();
-  });
-
   recorder.start(200);
-  audioSourceNode?.start();
-  const startedAt = performance.now();
 
-  await new Promise<void>((resolve) => {
-    function frame() {
-      const elapsed = (performance.now() - startedAt) / 1000;
-      const t = Math.min(elapsed, duration);
-      const slot = sceneAtTime(project, t);
-      if (slot && ctx) {
-        renderScene(ctx, slot.scene, slot.localTime, W, H);
-      }
-      opts.onProgress?.(Math.min(1, t / duration));
-      if (elapsed >= duration) {
-        resolve();
-        return;
-      }
-      requestAnimationFrame(frame);
-    }
-    requestAnimationFrame(frame);
+  await driveRender(duration, (t) => {
+    const slot = sceneAtTime(project, t);
+    if (slot && ctx) renderScene(ctx, slot.scene, slot.localTime, W, H);
+    opts.onProgress?.(Math.min(1, t / duration));
   });
 
-  recorder.stop();
-  await stopped;
-
-  try {
-    audioSourceNode?.stop();
-    await audioCtx?.close();
-  } catch {}
+  await stopRecorder(recorder);
+  detachAudio();
   stream.getTracks().forEach((t) => t.stop());
 
   const blob = new Blob(chunks, { type: mimeType });
@@ -212,27 +282,8 @@ export async function exportProjectForPlatform(
 
   const stream = canvas.captureStream(platform.fps);
 
-  // Audio mix (same as default export)
-  let audioCtx: AudioContext | null = null;
-  let audioSource: AudioBufferSourceNode | null = null;
-  if (project.audio?.src) {
-    try {
-      audioCtx = new AudioContext();
-      const resp = await fetch(project.audio.src);
-      const buf = await resp.arrayBuffer();
-      const audioBuf = await audioCtx.decodeAudioData(buf);
-      const dest = audioCtx.createMediaStreamDestination();
-      const gain = audioCtx.createGain();
-      gain.gain.value = project.audio.volume ?? 0.8;
-      audioSource = audioCtx.createBufferSource();
-      audioSource.buffer = audioBuf;
-      audioSource.loop = true;
-      audioSource.connect(gain).connect(dest);
-      dest.stream.getAudioTracks().forEach((t) => stream.addTrack(t));
-    } catch {
-      /* silent video fallback */
-    }
-  }
+  // Resilient audio — never hangs the render
+  const detachAudio = await attachAudio(stream, project);
 
   const mimeType = pickMimeType();
   const recorder = new MediaRecorder(stream, {
@@ -243,10 +294,7 @@ export async function exportProjectForPlatform(
   recorder.ondataavailable = (e) => {
     if (e.data && e.data.size > 0) chunks.push(e.data);
   };
-  const stopped = new Promise<void>((resolve) => (recorder.onstop = () => resolve()));
   recorder.start(200);
-  audioSource?.start();
-  const startedAt = performance.now();
 
   // Pre-compute contain placement so we don't recompute every frame
   const scale = Math.min(target.width / native.width, target.height / native.height);
@@ -255,41 +303,25 @@ export async function exportProjectForPlatform(
   const drawX = (target.width - drawW) / 2;
   const drawY = (target.height - drawH) / 2;
 
-  await new Promise<void>((resolve) => {
-    function frame() {
-      const elapsed = (performance.now() - startedAt) / 1000;
-      const t = Math.min(elapsed, duration);
-      const slot = sceneAtTime(project, t);
-      if (slot) {
-        renderScene(aCtx!, slot.scene, slot.localTime, native.width, native.height);
-
-        // Pillar/letterbox fill using the scene's dominant color
-        const fill =
-          slot.scene.background.kind === "solid"
-            ? slot.scene.background.color
-            : slot.scene.background.kind === "gradient"
-            ? slot.scene.background.from
-            : "#0a0a0a";
-        ctx!.fillStyle = fill;
-        ctx!.fillRect(0, 0, target.width, target.height);
-        ctx!.drawImage(author, drawX, drawY, drawW, drawH);
-      }
-      opts.onProgress?.(Math.min(1, t / duration));
-      if (elapsed >= duration) {
-        resolve();
-        return;
-      }
-      requestAnimationFrame(frame);
+  await driveRender(duration, (t) => {
+    const slot = sceneAtTime(project, t);
+    if (slot) {
+      renderScene(aCtx!, slot.scene, slot.localTime, native.width, native.height);
+      const fill =
+        slot.scene.background.kind === "solid"
+          ? slot.scene.background.color
+          : slot.scene.background.kind === "gradient"
+          ? slot.scene.background.from
+          : "#0a0a0a";
+      ctx!.fillStyle = fill;
+      ctx!.fillRect(0, 0, target.width, target.height);
+      ctx!.drawImage(author, drawX, drawY, drawW, drawH);
     }
-    requestAnimationFrame(frame);
+    opts.onProgress?.(Math.min(1, t / duration));
   });
 
-  recorder.stop();
-  await stopped;
-  try {
-    audioSource?.stop();
-    await audioCtx?.close();
-  } catch {}
+  await stopRecorder(recorder);
+  detachAudio();
   stream.getTracks().forEach((t) => t.stop());
 
   const blob = new Blob(chunks, { type: mimeType });
