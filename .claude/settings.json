@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if [ -f .claude/memory/notes.md ]; then echo '----- PROJECT MEMORY (.claude/memory/notes.md) -----'; cat .claude/memory/notes.md; echo '----- END PROJECT MEMORY -----'; fi"
+          }
+        ]
+      }
+    ]
+  }
+}
