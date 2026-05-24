@@ -116,31 +116,57 @@ function QuickBody() {
     setSteps(INITIAL_STEPS.map((s) => ({ ...s, status: "pending" })));
 
     try {
-      // 1. Ad copy via /api/generate-ad
+      // 1. Ad copy via /api/generate-ad — with a local fallback so a Gemini
+      //    quota error (429) or any API hiccup never blocks the pipeline.
       setStep("copy", { status: "running" });
       const currentBrand = useEditor.getState().project.brand;
-      const adRes = await fetch("/api/generate-ad", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          instruction: prompt,
-          currentAspect: "9:16",
-          tone,
-          brand: {
-            companyName: currentBrand.companyName,
-            category: currentBrand.category,
-            serviceArea: currentBrand.serviceArea,
-          },
-        }),
-      });
-      if (!adRes.ok) throw new Error(`Copy generation failed: HTTP ${adRes.status}`);
-      const adJson = await adRes.json();
-      const spec = adJson.spec as {
+
+      type Spec = {
         templateId: string;
         aspectRatio: string;
         brandPatch: Partial<BrandInputs>;
         sceneOverrides: Array<{ sceneIndex: number; layerIndex: number; text: string }>;
       };
+
+      const localFallbackSpec = (): Spec => {
+        const lower = prompt.toLowerCase();
+        let templateId = "tpl-free-quote";
+        if (tone === "funny" || /funny|joke|comedy|meme|tier|hilarious/.test(lower)) {
+          if (/tier|rank/.test(lower)) templateId = "tpl-funny-tier-list";
+          else if (/heard|said|quote|overheard/.test(lower)) templateId = "tpl-funny-overheard";
+          else if (/husband|wife|not junk/.test(lower)) templateId = "tpl-funny-not-junk";
+          else templateId = "tpl-funny-garage-finds";
+        } else if (/before|after|reveal|transform/.test(lower)) templateId = "tpl-before-after";
+        else if (/review|star|testimonial|social|trust/.test(lower)) templateId = "tpl-social-proof";
+        else if (/same.?day|today|urgent|now|quick/.test(lower)) templateId = "tpl-same-day";
+        else if (/off|discount|sale|deal|\$/.test(lower)) templateId = "tpl-offer";
+        else if (/local|family|insured|license|veteran/.test(lower)) templateId = "tpl-trust";
+        return { templateId, aspectRatio: "9:16", brandPatch: {}, sceneOverrides: [] };
+      };
+
+      let spec: Spec;
+      try {
+        const adRes = await fetch("/api/generate-ad", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            instruction: prompt,
+            currentAspect: "9:16",
+            tone,
+            brand: {
+              companyName: currentBrand.companyName,
+              category: currentBrand.category,
+              serviceArea: currentBrand.serviceArea,
+            },
+          }),
+        });
+        if (!adRes.ok) throw new Error(`HTTP ${adRes.status}`);
+        const adJson = await adRes.json();
+        spec = (adJson.spec as Spec) ?? localFallbackSpec();
+      } catch {
+        spec = localFallbackSpec();
+        setStep("copy", { status: "running", detail: "using built-in copy (AI quota/offline)" });
+      }
       setStep("copy", { status: "done", detail: `${spec.templateId} · ${spec.aspectRatio}` });
 
       const editor = useEditor.getState();
