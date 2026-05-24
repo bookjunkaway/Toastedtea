@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowRight, Sparkles, Wand2, Eye, Phone, Globe } from "lucide-react";
+import { ArrowRight, Sparkles, Wand2, Eye, Phone, Globe, Truck } from "lucide-react";
 import { listTemplates } from "@/lib/templates";
 
 export default function LandingPage() {
@@ -51,6 +51,9 @@ export default function LandingPage() {
               <Link className="btn-primary text-base px-5 py-3" href="/quick">
                 <Wand2 className="size-4" /> One-prompt ad
               </Link>
+              <Link className="btn-ghost text-base px-5 py-3" href="/book">
+                <Truck className="size-4" /> Instant quote
+              </Link>
               <Link className="btn-ghost text-base px-5 py-3" href="/playbook">
                 📒 Playbook
               </Link>
@@ -78,8 +81,8 @@ export default function LandingPage() {
             </div>
           </div>
 
-          <div className="relative">
-            <div className="aspect-[9/16] mx-auto max-w-xs panel overflow-hidden">
+          <Link href="/book" className="relative block group">
+            <div className="aspect-[9/16] mx-auto max-w-xs panel overflow-hidden transition-transform group-hover:scale-[1.02]">
               <div className="absolute inset-0 bg-gradient-to-br from-brand-400 via-brand to-red-600" />
               <div className="relative h-full flex flex-col items-center justify-center text-center p-6">
                 <div className="text-[10px] font-black tracking-[0.25em] text-black/80">TAMPA SPECIAL</div>
@@ -89,7 +92,7 @@ export default function LandingPage() {
                 <div className="mt-auto mb-2 text-xs font-bold text-ink-900/80">www.bookjunkaway.com</div>
               </div>
             </div>
-          </div>
+          </Link>
         </div>
       </section>
 
